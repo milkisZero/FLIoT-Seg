@@ -103,7 +103,7 @@ sub_arr = [
     },
     {
         parent: cnt_arr[0].parent + '/' + cnt_arr[9].name,
-        name: 'sub2',
+        name: 'sub1',
         nu: 'mqtt://' + cse.host + ':' + cse.mqttport + '/' + ae.id + '?ct=json', // 'http:/' + ip.address() + ':' + ae.port + '/noti?ct=json',
     },
 ];

@@ -285,7 +285,7 @@ class FLServer(object):
             print(f"Error creating cntSub: {e}")
 
     def create_cntPub(self):
-        # pub 컨테이너 이름 == conf의 sub, 키 이름]
+        # pub 컨테이너 이름 == conf의 sub, 키 이름
         for e in PUB_CNT_List:
             payload = {
                 "m2m:cnt": {
@@ -310,34 +310,34 @@ class FLServer(object):
                 return
         
         
-            payload = {
-                "m2m:sub": {
-                    "rn": "FLserverSub",  # 구독 이름
-                    "nu": ["mqtt://192.168.0.60:1883/SFLIoT/{e}/set?ct=json"],  # 알림을 받을 서버 URL
-                    "nct": 2,  # 알림 내용 형식 (전체 콘텐츠)
-                    "enc": {
-                        "net": [1,2,3,4]  # 이벤트 조건: 데이터 생성
-                    },
-                    "exc": 100  # 최대 알림 횟수
-                }
-            }
+            # payload = {
+            #     "m2m:sub": {
+            #         "rn": "FLserverSub",  # 구독 이름
+            #         "nu": [f"mqtt://192.168.0.60:1883/SFLIoT/{e}/set?ct=json"],  # 알림을 받을 서버 URL
+            #         "nct": 2,  # 알림 내용 형식 (전체 콘텐츠)
+            #         "enc": {
+            #             "net": [1,2,3,4]  # 이벤트 조건: 데이터 생성
+            #         },
+            #         "exc": 100  # 최대 알림 횟수
+            #     }
+            # }
             
-            url = MOBIUS_URL + '/Mobius/FLIoT/' + e
-            headers = HEADERS
-            headers["Content-Type"] = "application/json; ty=23"
+            # url = MOBIUS_URL + '/Mobius/FLIoT/' + e
+            # headers = HEADERS
+            # headers["Content-Type"] = "application/json; ty=23"
 
-            try:
-                response = requests.post(url, headers=headers, json=payload)
+            # try:
+            #     response = requests.post(url, headers=headers, json=payload)
 
-                if response.status_code == 201:
-                    print("sub created successfully!")
-                else:
-                    print(f"Failed to create sub: {response.status_code}, {response.text}")
+            #     if response.status_code == 201:
+            #         print("sub created successfully!")
+            #     else:
+            #         print(f"Failed to create sub: {response.status_code}, {response.text}")
 
-            except Exception as e:
-                print(f"Error creating sub: {e}")
+            # except Exception as e:
+            #     print(f"Error creating sub: {e}")
 
-    def publish(self,path, data):
+    def publish(self, path, data):
         payload = {
             "m2m:cin": {
                 "con": data,   
@@ -411,7 +411,10 @@ class FLServer(object):
             if "m2m:sgn" in data:
                 content = data["m2m:sgn"]["nev"]["rep"]["m2m:cin"]["con"]
                 # print("Updated Content: ", content)   
-                self.on_message(content)
+                
+                url = data["m2m:sgn"]['sur']
+                client_id = url.split('/')[2].replace("FromC", "")
+                self.on_message(content, client_id)
 
             return jsonify({"status": "received"}), 200
 
@@ -428,26 +431,24 @@ class FLServer(object):
     # def on_disconnect(self):
     #     print("Disconnected from MQTT Broker")
 
-    def on_message(self, userdata, msg):
-        payload = None;
+    def on_message(self, msg, client_id):
+        payload = json.dumps(msg);
+        print(type(payload))
+        
         try:
             # JSON 처리 시도
-            payload = json.loads(msg.payload.decode('utf-8'))
-            print("Detected JSON format:", payload)
-        # print(len(payload))
-        except Exception:
-            try:
-                # Pickle 처리 시도
-                payload = pickle.loads(msg.payload)
-            #  print("Detected Pickle format:", payload)
-                print(payload)
-            except Exception as e:
-                print(f"Failed to process message: {e}")
-        
-        print(msg)
-        pattern = r"/thyme/(client\d+)" 
-        client_id = re.match(pattern, msg.topic)
-                
+            payload = json.loads(payload)
+          #  print("Detected JSON format:", payload)
+        except Exception as e:
+            print(f"on_message Error: {e}")
+            # try:
+            #     # Pickle 처리 시도
+            #     payload = pickle.loads(msg.payload)
+            # #  print("Detected Pickle format:", payload)
+            #     print(payload)
+            # except Exception as e:
+            #     print(f"Failed to process message: {e}")
+     
         if client_id:
             self.register_handles(payload, client_id)       
         else :
@@ -456,7 +457,7 @@ class FLServer(object):
     def register_handles(self, payload, client_id):
         # single-threaded async, no need to lock
         
-        event = payload.event
+        event = payload['event']
         
         if event == 'connect':
             print(client_id, "connected")# # request.sid,,,io客户端的sid, socketio用此唯一标识客户端.
@@ -485,7 +486,7 @@ class FLServer(object):
                     'batch_size': 100
                 }
             }
-            self.publish(client_id+'FromS/set', data)
+            self.publish(client_id+'FromS', data)
                         
         elif event == 'client_ready':
             print("client ready for training", client_id, data)
@@ -572,7 +573,7 @@ class FLServer(object):
                     'run_validation': self.current_round % FLServer.ROUNDS_BETWEEN_VALIDATIONS == 0,
                 }
             }
-            self.publish(rid+'FromS/set', data)
+            self.publish(rid+'FromS', data)
 
     def stop_and_eval(self):
         #self.global_model.save("global_model.h5")
@@ -586,7 +587,7 @@ class FLServer(object):
                     'weights_format': 'pickle'
                 }
             }
-            self.publish(rid+'/set', data)
+            self.publish(rid, data)
 
     def start_flask(self):
         print(f"Starting Flask server at {self.host}:{self.port}...")

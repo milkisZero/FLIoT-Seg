@@ -123,7 +123,7 @@ function processResultsData(data, clientId) {
 function processOperateData(data, clientId) {
     console.log(`Processing operate data from ${clientId}, size: ${data.length} bytes`);
     const operate = JSON.parse(data);
-    const operatetopic = sendDataTopic[`client${clientId.slice(-1)}FromS`];
+    const operatetopic = sendDataTopic[`client${clientId.slice(-1)}FromC`];
     if (operatetopic) {
         doPublish(operatetopic, JSON.stringify(operate));
     } else {
@@ -164,15 +164,27 @@ let createConnection = () => {
                 if (topic === recvDataTopic.led) {
                     // LED 제어 로직
                 } else {
-                    const regex = /\/(client\d+)FromS\/set/;
-                    let key = toString(topic);
-                    const match = key.match(regex);
+                    const regex = /^\/(.*?)FromS\//;
+                    const match = topic.match(regex);
 
                     if (match) {
                         client_socket = clients.get(match[1]);
                         try {
-                            socket.write('OPERATE', message);
-                            // socket.write({ event: 'eval_started', data: payload });
+                            header = 'OPERATE';
+                            const paddedHeader = header.padEnd(10, ' ');
+                            // 2. 메시지 길이: 4바이트 정수로 변환
+                            const messageLength = Buffer.alloc(4);
+                            messageLength.writeUInt32BE(Buffer.byteLength(message), 0);
+                            // 3. 메시지 본문
+                            const messageBuffer = Buffer.from(message, 'utf-8');
+                            // 4. 전체 데이터 결합
+                            const fullMessage = Buffer.concat([
+                                Buffer.from(paddedHeader, 'utf-8'),
+                                messageLength,
+                                messageBuffer,
+                            ]);
+
+                            client_socket.write(fullMessage);
                             console.log('send msg to client from server: ', message);
                         } catch (error) {
                             console.error('Error broadcasting message:', error);
