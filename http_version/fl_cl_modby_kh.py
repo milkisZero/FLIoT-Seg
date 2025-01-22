@@ -114,7 +114,7 @@ class FederatedClient(object):
 
     def handle_message(self, header, message):
         if header == 'OPERATE':
-            event = message.event
+            event = json.loads(message)['event']
             if event == 'connect':
                 self.on_connect()
             elif event == 'disconnect':
@@ -173,19 +173,20 @@ class FederatedClient(object):
         self.local_model.set_weights(weights)
         my_weights, train_loss = self.local_model.train_one_round()
 
-        resp = {
+        header = b'OPERATE'
+        resp = json.dumps({
             'round_number': req['round_number'],
             'weights': obj_to_pickle_string(my_weights),
             'train_size': self.local_model.x_train.shape[0],
             'train_loss': train_loss,
-        }
+        })
 
         # 피클 파일 생성 및 전송
         filename = f"weights_round_{req['round_number']}.pkl"
         self.send_blob_data(my_weights, filename)
 
         # SocketIO를 사용하여 'client_update' 이벤트 전송
-        self.sio.emit('client_update', resp)
+        self.send_tcp_message(header, resp)
 
         # 추가 메트릭을 TCP 소켓을 통해 192.168.0.10:3105로 전송
         additional_metrics = {
