@@ -168,23 +168,25 @@ let createConnection = () => {
                     const match = topic.match(regex);
 
                     if (match) {
+                        const bufferData = Buffer.from(message);
+                        const decodedMessage = JSON.parse(bufferData.toString());
+                        // decodedMessage = JSON.parse(decodedMessage);
+                        console.log(decodedMessage);
+                        message = decodedMessage;
+
                         const clientId = match[1];
                         const clientSocket = clients.get(clientId);
                         if (clientSocket) {
                             try {
                                 const header = 'OPERATE';
-                                const messageString = JSON.stringify(message);
                                 const jsonMessage = JSON.stringify({
                                     header: header,
-                                    message: messageString
+                                    message: message,
                                 });
                                 const messageLength = Buffer.alloc(4);
                                 messageLength.writeUInt32BE(Buffer.byteLength(jsonMessage), 0);
                                 const messageBuffer = Buffer.from(jsonMessage, 'utf-8');
-                                const fullMessage = Buffer.concat([
-                                    messageLength,
-                                    messageBuffer,
-                                ]);
+                                const fullMessage = Buffer.concat([messageLength, messageBuffer]);
 
                                 clientSocket.write(fullMessage);
                                 console.log('Sent JSON message to client:', jsonMessage);
