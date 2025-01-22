@@ -166,8 +166,10 @@ class FederatedClient(object):
         header = b'OPERATE'
         FL_ready = json.dumps({
                 'event': 'client_ready',
-                'train_size': self.local_model.x_train.shape[0],
-                #'class_distr': my_class_distr  # for debugging, not needed in practice
+                'payload': {
+                    'train_size': self.local_model.x_train.shape[0],
+                    #'class_distr': my_class_distr  # for debugging, not needed in practice
+                }
             })
         # ready to be dispatched for training
         self.send_tcp_message(header, FL_ready)
@@ -195,10 +197,13 @@ class FederatedClient(object):
 
         header = b'OPERATE'
         resp = json.dumps({
-            'round_number': req['round_number'],
-            'weights': obj_to_pickle_string(my_weights),
-            'train_size': self.local_model.x_train.shape[0],
-            'train_loss': train_loss,
+            'event': 'client_update',
+            'payload': {
+                'round_number': req['round_number'],
+                'weights': obj_to_pickle_string(my_weights),
+                'train_size': self.local_model.x_train.shape[0],
+                'train_loss': train_loss,
+            }
         })
 
         # 피클 파일 생성 및 전송
@@ -230,9 +235,11 @@ class FederatedClient(object):
         header = b'OPERATE'
         resp = json.dumps({
             'event': 'client_eval',
-            'test_size': self.local_model.x_test.shape[0],
-            #'test_loss': test_loss,
-            #'test_accuracy': test_accuracy
+            'payload': {
+                'test_size': self.local_model.x_test.shape[0],
+                #'test_loss': test_loss,
+                #'test_accuracy': test_accuracy
+            }
         })
 
         self.send_tcp_message(header, resp)
