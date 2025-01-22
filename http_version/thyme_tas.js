@@ -119,8 +119,7 @@ let createConnection = () => {
                     } catch (error) {
                         console.error('Error processing results data:', error);
                     }
-                }
-                else if (topic === getDataTopic.client1FromC || topic === getDataTopic.client2FromC) {
+                } else if (topic === getDataTopic.client1FromC || topic === getDataTopic.client2FromC) {
                     try {
                         parent =
                             topic === getDataTopic.client1FromC
@@ -217,19 +216,9 @@ exports.ready_for_tas = function ready_for_tas() {
 };
 
 exports.send_to_tas = function send_to_tas(topicName, message) {
+    console.log(message);
+    console.log(message.toString());
     if (setDataTopic.hasOwnProperty(topicName)) {
-        if (conf.tas.client.connected) {
-            const payload = typeof message === 'object' ? JSON.stringify(message) : message.toString();
-            conf.tas.client.publish(setDataTopic[topicName], payload, (error) => {
-                if (error) {
-                    console.error('Publish error:', error);
-                    // 재연결 시도
-                    conf.tas.client.reconnect();
-                }
-            });
-        } else {
-            console.log('Client not connected, attempting to reconnect...');
-            conf.tas.client.reconnect();
-        }
+        conf.tas.client.publish(setDataTopic[topicName], JSON.stringify(message));
     }
 };
