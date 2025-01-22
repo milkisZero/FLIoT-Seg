@@ -457,7 +457,7 @@ class FLServer(object):
         # single-threaded async, no need to lock
         
         event = payload['event']
-        
+            
         if event == 'connect':
             print(client_id, "connected")# # request.sid,,,io客户端的sid, socketio用此唯一标识客户端.
             print('\033[1;35;0m connected \033[0m')
@@ -488,12 +488,14 @@ class FLServer(object):
             self.publish(client_id+'FromS', data)
                         
         elif event == 'client_ready':
+            data = payload['payload']
             print("client ready for training", client_id, data)
             self.ready_client_sids.add(client_id)
             if len(self.ready_client_sids) >= FLServer.MIN_NUM_WORKERS and self.current_round == -1:
                 self.train_next_round()
                 
         elif event == 'client_update':
+            data = payload['payload']
             print("received client update of bytes: ", sys.getsizeof(data))
             print("handle client_update", client_id)
             print('\033[1;35;0m handle client_update \033[0m')
@@ -537,6 +539,7 @@ class FLServer(object):
                     self.train_next_round()
                     
         elif event == 'client_eval':
+            data = payload['payload']
             if self.eval_client_updates is None:
                 return
             print("handle client_eval", client_id)
