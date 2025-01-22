@@ -173,9 +173,10 @@ let createConnection = () => {
                         if (clientSocket) {
                             try {
                                 const header = 'OPERATE';
+                                const messageString = JSON.stringify(message);
                                 const jsonMessage = JSON.stringify({
                                     header: header,
-                                    message: message
+                                    message: messageString
                                 });
                                 const messageLength = Buffer.alloc(4);
                                 messageLength.writeUInt32BE(Buffer.byteLength(jsonMessage), 0);
