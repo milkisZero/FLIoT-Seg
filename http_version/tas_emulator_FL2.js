@@ -35,8 +35,8 @@ let sendDataTopic = {
 };
 let recvDataTopic = {
     led: '/led/set',
-    client1FromS: '/client1/set',
-    client2FromS: '/client2/set',
+    client1FromS: '/client1FromS/set',
+    client2FromS: '/client2FromS/set',
 };
 let socket = net.createServer();
 let clientCount = 0;

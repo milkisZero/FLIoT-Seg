@@ -18,8 +18,8 @@ let getDataTopic = {
 
 let setDataTopic = {
     led: '/led/set',
-    client1FromS: '/client1/set',
-    client2FromS: '/client2/set',
+    client1FromS: '/client1FromS/set',
+    client2FromS: '/client2FromS/set',
 };
 
 let createConnection = () => {

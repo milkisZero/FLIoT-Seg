@@ -37,7 +37,7 @@ cse = {
 };
 
 // build ae
-let ae_name = 'KETI3_DEMO';
+let ae_name = 'FLIoT';
 
 ae = {
     name: ae_name,
@@ -97,8 +97,13 @@ cnt_arr = [
 // build sub
 sub_arr = [
     {
-        parent: cnt_arr[0].parent + '/' + cnt_arr[0].name,
+        parent: cnt_arr[0].parent + '/' + cnt_arr[8].name,
         name: 'sub1',
+        nu: 'mqtt://' + cse.host + ':' + cse.mqttport + '/' + ae.id + '?ct=json', // 'http:/' + ip.address() + ':' + ae.port + '/noti?ct=json',
+    },
+    {
+        parent: cnt_arr[0].parent + '/' + cnt_arr[9].name,
+        name: 'sub2',
         nu: 'mqtt://' + cse.host + ':' + cse.mqttport + '/' + ae.id + '?ct=json', // 'http:/' + ip.address() + ':' + ae.port + '/noti?ct=json',
     },
 ];
