@@ -15,4 +15,4 @@ header = message_data.get('header')
 message = message_data.get('message')
 
 print(header)
-print(message['event'])
+print(message)

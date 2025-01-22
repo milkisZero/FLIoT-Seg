@@ -105,10 +105,15 @@ class FederatedClient(object):
             try:
                 message_length_bytes = self.tcp_socket.recv(4)
                 message_length = int.from_bytes(message_length_bytes, byteorder='big')
+                print(message_length)
                 json_message = self.tcp_socket.recv(message_length).decode('utf-8')
-                message_data = json.dumps(json_message)
+                print(json_message)
+                message_data = json.loads(json.dumps(json_message))
+                print(message_data)
                 header = message_data.get('header')
                 message = message_data.get('message')
+                print(header)
+                print(message)
                 self.handle_message(header, message)
             except Exception as e:
                 print("Error receiving message:", e)
