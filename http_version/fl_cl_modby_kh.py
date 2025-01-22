@@ -222,8 +222,17 @@ class FederatedClient(object):
 
     def send_tcp_message(self, header, message):
         try:
+            # Ensure header is bytes
+            if isinstance(header, str):
+                header = header.encode()
+
+            # Ensure message is bytes
+            if isinstance(message, str):
+                message = message.encode()
+
             self.tcp_socket.send(header)
-            self.tcp_socket.send(struct.pack('>I', len(message)) + message.encode())
+            self.tcp_socket.send(struct.pack('>I', len(message)))
+            self.tcp_socket.sendall(message)
         except Exception as e:
             print(f"Error sending message: {e}")
 
