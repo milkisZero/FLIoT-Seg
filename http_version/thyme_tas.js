@@ -120,6 +120,29 @@ let createConnection = () => {
                         console.error('Error processing results data:', error);
                     }
                 }
+                else if (topic === getDataTopic.client1FromC || topic === getDataTopic.client2FromC) {
+                    try {
+                        parent =
+                            topic === getDataTopic.client1FromC
+                                ? conf.cnt[1].parent + '/' + conf.cnt[6].name
+                                : conf.cnt[1].parent + '/' + conf.cnt[7].name;
+                        content = JSON.parse(message.toString());
+                        console.log(`Received client data: ${topic}`);
+                        if (content) {
+                            onem2m_client.create_cin(
+                                parent,
+                                1,
+                                JSON.stringify(content),
+                                this,
+                                (status, res_body, to, socket) => {
+                                    console.log('x-m2m-rsc : ' + status + ' <----');
+                                }
+                            );
+                        }
+                    } catch (error) {
+                        console.error('Error processing results data:', error);
+                    }
+                }
             });
         } catch (error) {
             console.error('ERROR!!!', error);
