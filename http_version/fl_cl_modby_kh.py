@@ -120,7 +120,6 @@ class FederatedClient(object):
                 break
 
     def handle_message(self, header, message):
-        message = json.dumps(message)
         if header == 'OPERATE':
             event = message['event']
             if event == 'connect':
