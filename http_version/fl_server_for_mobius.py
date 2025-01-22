@@ -410,7 +410,7 @@ class FLServer(object):
             # 알림 데이터에서 콘텐츠 추출
             if "m2m:sgn" in data:
                 content = data["m2m:sgn"]["nev"]["rep"]["m2m:cin"]["con"]
-                # print("Updated Content: ", content)   
+                print("Updated Content: ", content)   
                 
                 url = data["m2m:sgn"]['sur']
                 client_id = url.split('/')[2].replace("FromC", "")
@@ -433,12 +433,11 @@ class FLServer(object):
 
     def on_message(self, msg, client_id):
         payload = json.dumps(msg);
-        print(type(payload))
         
         try:
             # JSON 처리 시도
             payload = json.loads(payload)
-          #  print("Detected JSON format:", payload)
+            print("Detected JSON format:", payload)
         except Exception as e:
             print(f"on_message Error: {e}")
             # try:

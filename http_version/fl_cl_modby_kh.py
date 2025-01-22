@@ -105,15 +105,24 @@ class FederatedClient(object):
             try:
                 message_length_bytes = self.tcp_socket.recv(4)
                 message_length = int.from_bytes(message_length_bytes, byteorder='big')
-                print(message_length)
-                json_message = self.tcp_socket.recv(message_length).decode('utf-8')
-                print(json_message)
-                message_data = json.loads(json.dumps(json_message))
-                print(message_data)
-                header = message_data.get('header')
-                message = message_data.get('message')
-                print(header)
-                print(message)
+                print('sum : ', message_length)
+                #json_message = self.tcp_socket.recv(65535).decode('utf-8')
+
+                json_message = b""
+                while len(json_message) != message_length:
+                    chunk = self.tcp_socket.recv(1024)
+                    print(len(chunk))
+                    # if len(chunk) == 0 :
+                    #     # 연결이 끊김
+                    #     break
+                    json_message += chunk
+      #          print(json_message)
+                message_data = json.loads(json_message)
+     #           print(message_data)
+                header = message_data['header']
+                message = message_data['message']
+                # print(header)
+                # print(message)
                 self.handle_message(header, message)
             except Exception as e:
                 print("Error receiving message:", e)
@@ -129,11 +138,11 @@ class FederatedClient(object):
             elif event == 'reconnect':
                 self.on_reconnect()
             elif event == 'init':
-                self.on_init(message)
+                self.on_init(message['payload'])
             elif event == 'client_update':
-                self.on_request_update(message)
+                self.on_request_update(message['payload'])
             elif event == 'client_eval':
-                self.on_stop_and_eval(message)
+                self.on_stop_and_eval(message['payload'])
             else:
                 print("Unknown event:", event)
         else:
@@ -151,7 +160,7 @@ class FederatedClient(object):
     def on_init(self, message):
         print("Init message received:", message)
         # 추가적인 초기화 로직
-        model_config = json.loads(message)
+        model_config = message
         self.local_model = LocalModel(model_config, datasource)
 
         header = b'OPERATE'

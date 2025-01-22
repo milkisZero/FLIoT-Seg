@@ -184,8 +184,8 @@ let createConnection = () => {
                                     message: message,
                                 });
                                 const messageLength = Buffer.alloc(4);
-                                messageLength.writeUInt32BE(Buffer.byteLength(jsonMessage), 0);
                                 const messageBuffer = Buffer.from(jsonMessage, 'utf-8');
+                                messageLength.writeUInt32BE(Buffer.byteLength(jsonMessage), 0);
                                 const fullMessage = Buffer.concat([messageLength, messageBuffer]);
 
                                 clientSocket.write(fullMessage);
