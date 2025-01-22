@@ -101,20 +101,23 @@ class FederatedClient(object):
         self.receive_tcp_messages()
 
     def receive_tcp_messages(self):
-        try:
-            while True:
-                header = self.tcp_socket.recv(10).decode().strip()
-                if not header:
-                    break
-                length = struct.unpack('>I', self.tcp_socket.recv(4))[0]
-                message = self.tcp_socket.recv(length).decode()
+        while True:
+            try:
+                message_length_bytes = self.tcp_socket.recv(4)
+                message_length = int.from_bytes(message_length_bytes, byteorder='big')
+                json_message = self.tcp_socket.recv(message_length).decode('utf-8')
+                message_data = json.loads(json.dumps(json_message))
+                header = message_data.get('header')
+                message = message_data.get('message')
                 self.handle_message(header, message)
-        except Exception as e:
-            print(f"Error receiving message: {e}")
+            except Exception as e:
+                print("Error receiving message:", e)
+                break
 
     def handle_message(self, header, message):
+        message = json.dumps(message)
         if header == 'OPERATE':
-            event = json.loads(message)['event']
+            event = message['event']
             if event == 'connect':
                 self.on_connect()
             elif event == 'disconnect':
@@ -127,6 +130,10 @@ class FederatedClient(object):
                 self.on_request_update(message)
             elif event == 'client_eval':
                 self.on_stop_and_eval(message)
+            else:
+                print("Unknown event:", event)
+        else:
+            print("Unknown header:", header)
 
     def on_connect(self):
         print("Connected")

@@ -1,12 +1,18 @@
 import json
 
-host = "127.0.0.1"
-port = "8080"
-
-data = {
-    "event":"client_wakeup",
-    "client_id":"1",
-    "url":f"http://{host}:{port}/aeWatcher"
+message = {
+    "header":"OPERATE",
+    "message":{
+        "event":"client_wakeup",
+        "client_id":"1",
+        "url":"http://127.0.0.1:8080/aeWatcher"
+    }
 }
 
-print(data)
+json_message = json.dumps(message)
+message_data = json.loads(json_message)
+header = message_data.get('header')
+message = message_data.get('message')
+
+print(header)
+print(message['event'])
