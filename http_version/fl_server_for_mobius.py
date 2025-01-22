@@ -1,28 +1,26 @@
-from flask import Flask, request, jsonify
-import threading
-import requests
-import time
 import warnings
 warnings.filterwarnings("ignore")
+#author:chunjiong zhang
+#date:2020/07/16
+
+
 from collections import defaultdict
 from typing import Dict, List, Type
 from keras.models import load_model
-# from keras.engine import Layer, Model # Raspberry yxyao 20241224
-from tensorflow.keras.layers import Layer # Raspberry yxyao 20241224
-from tensorflow.keras.models import Model # Raspberry yxyao 20241224
+from keras.engine import Layer, Model
+
 import pickle#python中几乎所有的数据类型（列表，字典，集合，类等）都可以用pickle来序列化，
 import keras
 import uuid#  UUID是128位的全局唯一标识符，通常由32字节的字符串表示。它可以保证时间和空间的唯一性，也称为GUID，全称为：
             #UUID —— Universally Unique IDentifier      Python 中叫 UUID
     #它通过MAC地址、时间戳、命名空间、随机数、伪随机数来保证生成ID的唯一性。
-# from keras.models import Sequential,Model,Input # Raspberry yxyao 20241224
-from tensorflow.keras.models import Sequential, Model # Raspberry yxyao 20241224
-from tensorflow.keras.layers import Input # Raspberry yxyao 20241224
+from keras.models import Sequential,Model,Input
 from keras.layers import Dense, Dropout, Flatten
-# from keras.layers.advanced_activations import LeakyReLU # Raspberry yxyao 20241224
-from tensorflow.keras.layers import LeakyReLU # Raspberry yxyao 20241224
+from keras.layers.advanced_activations import LeakyReLU
 import tensorflow as tf
 from keras import backend as K
+
+
 import msgpack#信息压缩
 import random
 import codecs#Python中用codecs处理各种字符编码的文件
@@ -34,10 +32,14 @@ import logging
 from sklearn.preprocessing import MinMaxScaler
 import keras.backend as K
 from keras.layers.core import Lambda
+
 from keras.models import load_model
+
+
 logging.basicConfig(
     level=logging.INFO,
 )
+
 import sys
 #from ranger import Ranger
 import time
@@ -47,6 +49,9 @@ from flask_socketio import SocketIO#SocketIO是大名鼎鼎的实时通讯库,�
 from flask_socketio import *
 # https://flask-socketio.readthedocs.io/en/latest/
 import re
+import requests
+import time
+import threading
 
 MOBIUS_URL = "http://192.168.0.60:7579"
 HEADERS = {
@@ -60,8 +65,8 @@ SUB_CNT_List = ['client1FromC', 'client2FromC']
 # 컨테이너 이름 , 이름/set == 토픽
 PUB_CNT_List = ['client1FromS', 'client2FromS']
 
-HOST = "192.168.0.200"
-PORT = 5000
+HOST = "192.168.0.60"
+PORT = 5011
 
 class GlobalModel(object):#类文档字符串
     """docstring for GlobalModel"""
@@ -167,30 +172,29 @@ class FLServer(object):
         self.eval_client_updates = []
         #####
         
+        self.host = host
+        self.port = port
         self.app = Flask(__name__)
         self.app.add_url_rule('/notify', 'notify', self.notify, methods=['POST'])
         self.app.add_url_rule('/aeWatcher', 'aeWatcher', self.aeWatcher, methods=['POST'])
-        self.app.add_url_rule('/aeSub', 'aeSub', self.aeSub, methods=['POST'])
+        self.app.add_url_rule('/aeSub', 'aeSub', self.aeSub, methods=['POST'])  
                 
-        # @self.app.route('/')
-        # def dashboard():
-        #     """测试页面"""
-        #     return render_template('dashboard.html')
+        @self.app.route('/')
+        def dashboard():
+            """测试页面"""
+            return render_template('dashboard.html')
 
-        # @self.app.route('/stats')
-        # def status_page():
-        #     return json.dumps(self.global_model.get_stats())\
-        
-        self.create_aeWatcher()
-        
+        @self.app.route('/stats')
+        def status_page():
+            return json.dumps(self.global_model.get_stats())        
         
     # Mobius를 구독해서 ae 감지
-    def create_aeWatcher():
+    def create_aeWatcher(self):
         # 구독 요청 데이터
         payload = {
             "m2m:sub": {
                 "rn": "aeWatcher",  # 구독 이름
-                "nu": ["http://192.168.0.200:5000/aeWatcher"],  # 알림을 받을 서버 URL
+                "nu": [f"http://{self.host}:{self.port}/aeWatcher"],  # 알림을 받을 서버 URL
                 "nct": 2,  # 알림 내용 형식 (전체 콘텐츠)
                 "enc": {
                     "net": [1,2,3,4]  # 이벤트 조건: 데이터 생성
@@ -215,14 +219,14 @@ class FLServer(object):
             print(f"Error creating aeWatcher: {e}")
 
     # ae 구독
-    def create_aeSub(path):
+    def create_aeSub(self,path):
         # Mobius 서버 및 리소스 경로 설정
     
         # 구독 요청 데이터
         payload = {
             "m2m:sub": {
                 "rn": "aeSub",  # 구독 이름
-                "nu": ["http://192.168.0.200:5000/aeSub"],  # 알림을 받을 서버 URL
+                "nu": [f"http://{self.host}:{self.port}/aeSub"],  # 알림을 받을 서버 URL
                 "nct": 2,  # 알림 내용 형식 (전체 콘텐츠)
                 "enc": {
                     "net": [1,2,3,4]  # 이벤트 조건: 데이터 생성
@@ -248,14 +252,14 @@ class FLServer(object):
             print(f"Error creating aeSub: {e}")
 
     # 컨테이너 구독
-    def create_cntSub(path):
+    def create_cntSub(self,path):
         # Mobius 서버 및 리소스 경로 설정
     
         # 구독 요청 데이터
         payload = {
             "m2m:sub": {
                 "rn": "cntSub",  # 구독 이름
-                "nu": ["http://192.168.0.200:5000/notify"],  # 알림을 받을 서버 URL
+                "nu": [f"http://{self.host}:{self.port}/notify"],  # 알림을 받을 서버 URL
                 "nct": 2,  # 알림 내용 형식 (전체 콘텐츠)
                 "enc": {
                     "net": [1,2,3,4]  # 이벤트 조건: 데이터 생성
@@ -280,7 +284,7 @@ class FLServer(object):
         except Exception as e:
             print(f"Error creating cntSub: {e}")
 
-    def create_cntPub():
+    def create_cntPub(self):
         # pub 컨테이너 이름 == conf의 sub, 키 이름]
         for e in PUB_CNT_List:
             payload = {
@@ -333,7 +337,7 @@ class FLServer(object):
             except Exception as e:
                 print(f"Error creating sub: {e}")
 
-    def publish(path, data):
+    def publish(self,path, data):
         payload = {
             "m2m:cin": {
                 "con": data,   
@@ -440,7 +444,7 @@ class FLServer(object):
             except Exception as e:
                 print(f"Failed to process message: {e}")
         
-        
+        print(msg)
         pattern = r"/thyme/(client\d+)" 
         client_id = re.match(pattern, msg.topic)
                 
@@ -481,8 +485,8 @@ class FLServer(object):
                     'batch_size': 100
                 }
             }
-            self.mqtt_client.publish(client_id+'/set', data)
-            
+            self.publish(client_id+'FromS/set', data)
+                        
         elif event == 'client_ready':
             print("client ready for training", client_id, data)
             self.ready_client_sids.add(client_id)
@@ -584,8 +588,25 @@ class FLServer(object):
             }
             self.publish(rid+'/set', data)
 
-    def start(self):
+    def start_flask(self):
+        print(f"Starting Flask server at {self.host}:{self.port}...")
         self.app.run(host=self.host, port=self.port)
+
+    def start(self):
+        flask_thread = threading.Thread(target=self.start_flask)
+        flask_thread.daemon = True  # 메인 스레드가 종료되면 Flask 스레드도 종료
+        flask_thread.start()
+        
+        time.sleep(1) 
+        self.create_aeWatcher()
+
+        # 서버 실행 유지
+        while True:
+            try:
+                time.sleep(1)  # 메인 루프에서 대기
+            except KeyboardInterrupt:
+                print("Shutting down FLServer...")
+                break
 
 def obj_to_pickle_string(x):
     return codecs.encode(pickle.dumps(x), "base64").decode()
@@ -599,7 +620,7 @@ def pickle_string_to_obj(s):
 if __name__ == '__main__':
     time_start = time.time()
     server = FLServer(GlobalModel_KDD_AE, HOST, PORT)
-    print("listening on ...");
+    print("listening on ...")
     server.start()
     
 

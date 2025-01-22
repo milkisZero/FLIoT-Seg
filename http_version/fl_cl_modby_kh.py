@@ -94,7 +94,10 @@ class FederatedClient(object):
         self.tcp_socket.connect((TCP_SERVER_IP, TCP_SERVER_PORT))
 
         print("sent wakeup")
-        self.send_tcp_message('OPERATION', {'event': 'client_wake_up'})
+        message=json.dumps({
+            'event' : 'client_wake_up'
+        })
+        self.send_tcp_message('OPERATION', message)
         self.receive_tcp_messages()
 
     def receive_tcp_messages(self):
@@ -221,20 +224,13 @@ class FederatedClient(object):
         self.send_additional_results(additional_results)
 
     def send_tcp_message(self, header, message):
-        try:
-            # Ensure header is bytes
-            if isinstance(header, str):
-                header = header.encode()
-
-            # Ensure message is bytes
-            if isinstance(message, str):
-                message = message.encode()
-
-            self.tcp_socket.send(header)
-            self.tcp_socket.send(struct.pack('>I', len(message)))
-            self.tcp_socket.sendall(message)
-        except Exception as e:
-            print(f"Error sending message: {e}")
+        header=header.encode()
+        self.tcp_socket.send(header)
+        self.tcp_socket.send(struct.pack('>I', len(message)))
+        self.tcp_socket.sendall(message.encode())
+        # try:
+        # except Exception as e:
+        #     print(f"Error sending message: {e}")
 
 #    def send_pickle_file(self, filename):
 #        self.tcp_socket.send(filename.encode())
@@ -262,4 +258,4 @@ class FederatedClient(object):
 
 if __name__ == "__main__":
     time_start = time.time()
-    FederatedClient("192.168.0.60", 5011, datasource)
+    FederatedClient(TCP_SERVER_IP, TCP_SERVER_PORT, datasource)
