@@ -95,7 +95,6 @@ class FederatedClient(object):
 
         print("sent wakeup")
         self.send_tcp_message('OPERATION', {'event': 'client_wake_up'})
-        self.send_tcp_message('------------------------------client_wake_up---------------')
         self.receive_tcp_messages()
 
     def receive_tcp_messages(self):
@@ -154,7 +153,8 @@ class FederatedClient(object):
         try:
             header = b'RESULTS'
             message = json.dumps(results)
-            self.send_tcp_message(header, message)
+            self.tcp_socket.send(header)
+            self.tcp_socket.send(struct.pack('>I', len(message)) + message.encode())
             print(f"Additional results sent to 192.168.0.10:3105: {results}")
         except Exception as e:
             print(f"Error sending additional results: {e}")
@@ -204,12 +204,12 @@ class FederatedClient(object):
         print('\033[1;35;0m Time cost = %fs \033[0m' % (time_end - time_start))
         #test_loss, test_accuracy = self.local_model.evaluate()
         header = b'OPERATION'
-        resp = {
+        resp = json.dumps({
             'event': 'client_eval',
             'test_size': self.local_model.x_test.shape[0],
             #'test_loss': test_loss,
             #'test_accuracy': test_accuracy
-        }
+        })
 
         self.send_tcp_message(header, resp)
 
@@ -222,10 +222,8 @@ class FederatedClient(object):
 
     def send_tcp_message(self, header, message):
         try:
-            message_data = message.encode()
-            self.tcp_socket.send(header.encode())
-            self.tcp_socket.send(struct.pack('>I', len(message_data)))
-            self.tcp_socket.sendall(message_data)
+            self.tcp_socket.send(header)
+            self.tcp_socket.send(struct.pack('>I', len(message)) + message.encode())
         except Exception as e:
             print(f"Error sending message: {e}")
 
