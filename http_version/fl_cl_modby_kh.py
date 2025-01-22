@@ -97,7 +97,7 @@ class FederatedClient(object):
         message=json.dumps({
             'event' : 'client_wake_up'
         })
-        self.send_tcp_message('OPERATION', message)
+        self.send_tcp_message('OPERATE', message)
         self.receive_tcp_messages()
 
     def receive_tcp_messages(self):
@@ -113,7 +113,7 @@ class FederatedClient(object):
             print(f"Error receiving message: {e}")
 
     def handle_message(self, header, message):
-        if header == 'OPERATION':
+        if header == 'OPERATE':
             event = message.event
             if event == 'connect':
                 self.on_connect()
@@ -143,7 +143,7 @@ class FederatedClient(object):
         model_config = json.loads(message)
         self.local_model = LocalModel(model_config, datasource)
 
-        header = b'OPERATION'
+        header = b'OPERATE'
         FL_ready = json.dumps({
                 'event': 'client_ready',
                 'train_size': self.local_model.x_train.shape[0],
@@ -206,7 +206,7 @@ class FederatedClient(object):
         time_end = time.time()
         print('\033[1;35;0m Time cost = %fs \033[0m' % (time_end - time_start))
         #test_loss, test_accuracy = self.local_model.evaluate()
-        header = b'OPERATION'
+        header = b'OPERATE'
         resp = json.dumps({
             'event': 'client_eval',
             'test_size': self.local_model.x_test.shape[0],
@@ -224,13 +224,13 @@ class FederatedClient(object):
         self.send_additional_results(additional_results)
 
     def send_tcp_message(self, header, message):
-        header=header.encode()
-        self.tcp_socket.send(header)
-        self.tcp_socket.send(struct.pack('>I', len(message)))
-        self.tcp_socket.sendall(message.encode())
-        # try:
-        # except Exception as e:
-        #     print(f"Error sending message: {e}")
+        try:
+            header=header.encode()
+            self.tcp_socket.send(header)
+            self.tcp_socket.send(struct.pack('>I', len(message)))
+            self.tcp_socket.sendall(message.encode())
+        except Exception as e:
+            print(f"Error sending message: {e}")
 
 #    def send_pickle_file(self, filename):
 #        self.tcp_socket.send(filename.encode())

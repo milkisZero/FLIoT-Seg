@@ -65,8 +65,8 @@ socket.on('connection', (client) => {
                         processMetricsData(payload, clientId);
                     } else if (header === 'RESULTS') {
                         processResultsData(payload, clientId);
-                    } else if (header === 'OPERATION') {
-                        processOperationData(payload, clientId);
+                    } else if (header === 'OPERATE') {
+                        processOperateData(payload, clientId);
                     } else {
                         console.error(`Unknown header: ${header}`);
                     }
@@ -120,14 +120,14 @@ function processResultsData(data, clientId) {
     }
 }
 
-function processOperationData(data, clientId) {
-    console.log(`Processing operation data from ${clientId}, size: ${data.length} bytes`);
-    const operation = JSON.parse(data);
-    const operationtopic = sendDataTopic[`client${clientId.slice(-1)}FromS`];
-    if (operationtopic) {
-        doPublish(operationtopic, JSON.stringify(operation));
+function processOperateData(data, clientId) {
+    console.log(`Processing operate data from ${clientId}, size: ${data.length} bytes`);
+    const operate = JSON.parse(data);
+    const operatetopic = sendDataTopic[`client${clientId.slice(-1)}FromS`];
+    if (operatetopic) {
+        doPublish(operatetopic, JSON.stringify(operate));
     } else {
-        console.error(`No operation topic found for client ${clientId}`);
+        console.error(`No operate topic found for client ${clientId}`);
     }
 }
 
@@ -171,7 +171,7 @@ let createConnection = () => {
                     if (match) {
                         client_socket = clients.get(match[1]);
                         try {
-                            socket.write('OPERATION', message);
+                            socket.write('OPERATE', message);
                             // socket.write({ event: 'eval_started', data: payload });
                             console.log('send msg to client from server: ', message);
                         } catch (error) {
