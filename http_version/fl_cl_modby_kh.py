@@ -106,7 +106,7 @@ class FederatedClient(object):
                 message_length_bytes = self.tcp_socket.recv(4)
                 message_length = int.from_bytes(message_length_bytes, byteorder='big')
                 json_message = self.tcp_socket.recv(message_length).decode('utf-8')
-                message_data = json.loads(json.dumps(json_message))
+                message_data = json.dumps(json_message)
                 header = message_data.get('header')
                 message = message_data.get('message')
                 self.handle_message(header, message)
