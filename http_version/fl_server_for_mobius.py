@@ -410,7 +410,7 @@ class FLServer(object):
             # 알림 데이터에서 콘텐츠 추출
             if "m2m:sgn" in data:
                 content = data["m2m:sgn"]["nev"]["rep"]["m2m:cin"]["con"]
-                print("Updated Content: ", content)   
+                #print("Updated Content: ", content)   
                 
                 url = data["m2m:sgn"]['sur']
                 client_id = url.split('/')[2].replace("FromC", "")
@@ -437,7 +437,7 @@ class FLServer(object):
         try:
             # JSON 처리 시도
             payload = json.loads(payload)
-            print("Detected JSON format:", payload)
+           # print("Detected JSON format:", payload)
         except Exception as e:
             print(f"on_message Error: {e}")
             # try:
@@ -451,7 +451,7 @@ class FLServer(object):
         if client_id:
             self.register_handles(payload, client_id)       
         else :
-            print(payload)
+            print("none exist client_id!!")
              
     def register_handles(self, payload, client_id):
         # single-threaded async, no need to lock
@@ -589,7 +589,7 @@ class FLServer(object):
                     'weights_format': 'pickle'
                 }
             }
-            self.publish(rid, data)
+            self.publish(rid+'FromS', data)
 
     def start_flask(self):
         print(f"Starting Flask server at {self.host}:{self.port}...")

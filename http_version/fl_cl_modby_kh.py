@@ -111,7 +111,7 @@ class FederatedClient(object):
                 json_message = b""
                 while len(json_message) != message_length:
                     chunk = self.tcp_socket.recv(1024)
-                    print(len(chunk))
+                    #print(len(chunk))
                     # if len(chunk) == 0 :
                     #     # 연결이 끊김
                     #     break
@@ -139,9 +139,9 @@ class FederatedClient(object):
                 self.on_reconnect()
             elif event == 'init':
                 self.on_init(message['payload'])
-            elif event == 'client_update':
+            elif event == 'request_update':
                 self.on_request_update(message['payload'])
-            elif event == 'client_eval':
+            elif event == 'stop_and_eval':
                 self.on_stop_and_eval(message['payload'])
             else:
                 print("Unknown event:", event)
