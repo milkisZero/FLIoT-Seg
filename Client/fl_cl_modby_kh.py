@@ -31,6 +31,9 @@ print("now is {}".format(datetime.datetime.today()))
 datasource= gen_train_valid_data()
 import threading
 
+adam = keras.optimizers.Adam(lr = 0.0001, beta_1=0.95, beta_2=0.999,epsilon=1e-08)
+reduce_lr = ReduceLROnPlateau(monitor = 'loss', factor = 0.1, patience = 2,verbose = 1, min_lr = 0.00000001, mode = 'min')
+
 # TCP 클라이언트 설정
 TCP_SERVER_IP = '192.168.0.10'  # 수신 라즈베리파이의 IP 주소
 TCP_SERVER_PORT = 3105
@@ -41,6 +44,7 @@ class LocalModel(object):
         self.model = model_from_json(model_config['model_json'])#model_from_json用于从输入的 JSON 格式的模型描述创建了一个新的模型。
         # the weights will be initialized on first pull from server
 
+        self.model.compile(loss=keras.losses.mean_squared_error,optimizer=adam)
         #load data
         self.x_train, self.y_train,self.x_test,self.y_test = data_collected
 
@@ -51,11 +55,20 @@ class LocalModel(object):
         self.model.set_weights(new_weights)
 
     # return final weights, train loss, train accuracy
-    def train_one_round(self):
-        self.model.compile(loss=keras.losses.mean_squared_error,optimizer=keras.optimizers.RMSprop(),metrics=['accuracy'])
+    def train_one_round(self,p,round):
+        print('\033[1;35;0m p1= \033[0m', p)
+        
+        self.model.compoile(loss=keras.losses.mean_squared_error,
+                            optimizer=adam,
+                            metrics=['accuracy'])
+        
 
-        self.loss = self.model.fit(self.x_train,self.x_train,epochs=self.model_config['epoch_per_round'],batch_size=self.model_config['batch_size'],
-                                   validation_data=(self.x_test, self.x_test), )
+        self.loss = self.model.fit(self.x_train,
+                                   self.x_train,
+                                   epochs=self.model_config['epoch_per_round'],
+                                   batch_size=self.model_config['batch_size'],
+                                   validation_data=(self.x_test, self.x_test),
+                                   callbacks=[EarlyStopping(patience=3),reduce_lr], )
         print('one round loss', self.loss.history['loss'][0])
         return self.model.get_weights(), self.loss.history['loss'][0]#, score[1]
 
@@ -180,7 +193,7 @@ class FederatedClient(object):
             message = json.dumps(results)
             self.tcp_socket.send(header)
             self.tcp_socket.send(struct.pack('>I', len(message)) + message.encode())
-            print(f"Additional results sent to 192.168.0.10:3105: {results}")
+            print(f"Additional results sent to {TCP_SERVER_IP}:{TCP_SERVER_PORT}: {results}")
         except Exception as e:
             print(f"Error sending additional results: {e}")
 
@@ -193,7 +206,7 @@ class FederatedClient(object):
             weights = pickle_string_to_obj(req['current_weights'])
 
         self.local_model.set_weights(weights)
-        my_weights, train_loss = self.local_model.train_one_round()
+        my_weights, train_loss = self.local_model.train_one_round(req['p1'],req['round_number'])
 
         header = b'OPERATE'
         resp = json.dumps({
@@ -279,7 +292,7 @@ class FederatedClient(object):
             message = json.dumps(metrics)
             self.tcp_socket.send(header)
             self.tcp_socket.sendall(struct.pack('>I', len(message)) + message.encode())
-            print(f"Additional metrics sent to 192.168.0.10:3105: {metrics}")
+            print(f"Additional metrics sent to {TCP_SERVER_IP}:{TCP_SERVER_PORT}")
         except Exception as e:
             print(f"Error sending additional metrics: {e}")
 
