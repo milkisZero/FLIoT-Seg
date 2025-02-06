@@ -33,9 +33,6 @@ print("now is {}".format(datetime.datetime.today()))
 datasource= gen_train_valid_data()
 import threading
 
-adam = keras.optimizers.Adam(lr = 0.0001, beta_1=0.95, beta_2=0.999,epsilon=1e-08)
-reduce_lr = ReduceLROnPlateau(monitor = 'loss', factor = 0.1, patience = 2,verbose = 1, min_lr = 0.00000001, mode = 'min')
-
 # TCP 클라이언트 설정
 TCP_SERVER_IP = '192.168.0.10'  # 수신 라즈베리파이의 IP 주소
 TCP_SERVER_PORT = 3105
@@ -43,12 +40,8 @@ TCP_SERVER_PORT = 3105
 class LocalModel(object):
     def __init__(self, model_config, data_collected):
         self.model_config = model_config
-        self.model = model_from_json(model_config['model_json'])#model_from_json用于从输入的 JSON 格式的模型描述创建了一个新的模型。
-        # the weights will be initialized on first pull from server
-
-        self.model.compile(loss=keras.losses.mean_squared_error,optimizer=adam)
-        #load data
-        self.x_train, self.y_train,self.x_test,self.y_test = data_collected
+        self.model = model_from_json(model_config['model_json'])
+        self.x_train, self.y_train, self.x_test, self.y_test = data_collected
 
     def get_weights(self):
         return self.model.get_weights()
@@ -110,17 +103,36 @@ class FederatedClient(object):
     def __init__(self, server_host, server_port, datasource):
         self.local_model = None
         self.datasource = datasource
-   
-        # TCP 소켓 초기화를 먼저 수행
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.tcp_socket.connect((TCP_SERVER_IP, TCP_SERVER_PORT))
+        self.tcp_socket.connect((server_host, server_port))
+        
+        self.eval_lock = threading.Lock()
+        self.receive_tcp_message()
+        self.test_interval = 60
+        self.testing_thread = threading.Thread(target=self.continuous_testing, daemon=True)
+        self.testing_thread.start()
 
         print("sent wakeup")
         message=json.dumps({
             'event' : 'client_wake_up'
         })
         self.send_tcp_message('OPERATE', message)
-        self.receive_tcp_messages()
+        
+    def continuous_testing(self):
+        while True:
+            time.sleep(self.test_interval)
+            # Check that the local model exists and its evaluation method is callable
+            if self.local_model is not None and hasattr(self.local_model, 'evaluate1') and callable(self.local_model.evaluate1):
+                print("\n[Continuous Testing] Evaluating model on test data ...")
+                try:
+                    with self.eval_lock:
+                        f1, precision, recall = self.local_model.evaluate1()
+                    print("[Continuous Testing] Results -> F1: {:.6f}, Precision: {:.6f}, Recall: {:.6f}\n"
+                          .format(f1, precision, recall))
+                except Exception as e:
+                    print("Error during continuous testing:", e)
+            else:
+                print("[Continuous Testing] Local model or evaluation method not ready.")
 
     def receive_tcp_messages(self):
         while True:
@@ -183,11 +195,11 @@ class FederatedClient(object):
     def on_reconnect(self):
         print("Reconnected")
 
-    def on_init(self, message):
-        print("Init message received:", message)
+    def on_init(self, *args):
+        model_config = args[0]
+        print("Init message received:", model_config)
         # 추가적인 초기화 로직
-        model_config = message
-        self.local_model = LocalModel(model_config, datasource)
+        self.local_model = LocalModel(model_config, self.datasource)
 
         header = b'OPERATE'
         FL_ready = json.dumps({
