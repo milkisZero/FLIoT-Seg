@@ -1,6 +1,9 @@
 import warnings
 warnings.filterwarnings("ignore")
 
+os.environ["CUDA_VISIBLE_DEVICES"] = ""  # -1 to use CPU
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'  # 0 = all logs, 1 = filter out INFO, 2 = WARNING, 3 = ERROR
+
 import numpy as np
 import keras
 import random
@@ -19,7 +22,6 @@ import json
 import pickle
 import codecs
 from keras.models import model_from_json
-from socketIO_client import SocketIO, LoggingNamespace
 from fl_server import obj_to_pickle_string, pickle_string_to_obj
 from sklearn.metrics import f1_score,precision_score,recall_score,accuracy_score,confusion_matrix,roc_curve,auc
 from dataset1CICIDS import gen_train_valid_data
@@ -55,42 +57,49 @@ class LocalModel(object):
         self.model.set_weights(new_weights)
 
     # return final weights, train loss, train accuracy
-    def train_one_round(self,p,round):
-        print('\033[1;35;0m p1= \033[0m', p)
-        
+    def train_one_round(self):
         self.model.compile(loss=keras.losses.mean_squared_error,
-                            optimizer=adam,
-                            metrics=['accuracy'])
-        
-
-        self.loss = self.model.fit(self.x_train,
-                                   self.x_train,
-                                   epochs=self.model_config['epoch_per_round'],
-                                   batch_size=self.model_config['batch_size'],
-                                   validation_data=(self.x_test, self.x_test),
-                                   callbacks=[EarlyStopping(patience=3),reduce_lr], )
-        print('one round loss', self.loss.history['loss'][0])
-        return self.model.get_weights(), self.loss.history['loss'][0]#, score[1]
+                           optimizer=keras.optimizers.RMSprop(),
+                           metrics=['accuracy'])
+        self.loss = self.model.fit(
+            self.x_train, self.x_train,
+            epochs=self.model_config['epoch_per_round'],
+            batch_size=self.model_config['batch_size'],
+            validation_data=(self.x_test, self.x_test),
+            verbose=1
+        )
+        current_loss = self.loss.history['loss'][0]
+        print('One round training loss: {:.16f}'.format(current_loss))
+        return self.model.get_weights(), current_loss
 
     def evaluate1(self):
         def calculate_losses(x, preds):
             losses = np.zeros(len(x))
             for i in range(len(x)):
-                losses[i] = ((preds[i] - x[i]) ** 2).mean(axis=None)
+                losses[i] = np.mean(np.square(preds[i] - x[i]))
             return losses
-        # We set the threshold equal to the training loss of the autoencoder
-        threshold = self.loss.history['loss'][-1]
-        testing_set_predictions = self.model.predict(self.x_test)
+
+        # Always compute threshold using the current training set predictions.
+        print("Computing threshold from training data predictions...")
+        train_preds = self.model.predict(self.x_train, verbose=1)
+        train_losses = calculate_losses(self.x_train, train_preds)
+        # Changed threshold percentile from 90 to 99 for better anomaly separation.
+        threshold = np.percentile(train_losses, 99)
+        print("Computed threshold:", threshold)
+
+        testing_set_predictions = self.model.predict(self.x_test, verbose=1)
         test_losses = calculate_losses(self.x_test, testing_set_predictions)
-        testing_set_predictions = np.zeros(len(test_losses))
-        testing_set_predictions[np.where(test_losses > threshold)] = 1
-        # ==============================Evaluation====================================
-        precision = precision_score(self.y_test, testing_set_predictions)
-        recall = recall_score(self.y_test, testing_set_predictions)
-        f1 = f1_score(self.y_test, testing_set_predictions)
-        print("Performance over the testing data set \n")
-        print(" Recall:{}, Precision:{}, F1:{}\n".format(recall,precision,f1,'.4f'))
-        return f1,precision,recall
+
+        # Generate binary anomaly predictions.
+        binary_predictions = np.zeros(len(test_losses))
+        binary_predictions[test_losses > threshold] = 1
+
+        precision = precision_score(self.y_test, binary_predictions)
+        recall = recall_score(self.y_test, binary_predictions)
+        f1 = f1_score(self.y_test, binary_predictions)
+        print("Performance over the testing data set:")
+        print("  Recall: {:.16f}, Precision: {:.16f}, F1: {:.16f}".format(recall, precision, f1))
+        return f1, precision, recall
 
 # A federated client is a process that can go to sleep / wake up intermittently
 # it learns the global model by communication with the server;
@@ -156,10 +165,10 @@ class FederatedClient(object):
                 self.on_request_update(message['payload'])
             elif event == 'stop_and_eval':
                 self.on_stop_and_eval(message['payload'])
-            elif event == 'global_update':
-                self.on_global_update(message['payload'])
-            elif event == 'request_eval':
-                self.on_request_eval(message['payload'])
+            # elif event == 'global_update':
+            #     self.on_global_update(message['payload'])
+            # elif event == 'request_eval':
+            #     self.on_request_eval(message['payload'])
             else:
                 print("Unknown event:", event)
         else:
@@ -210,7 +219,7 @@ class FederatedClient(object):
             weights = pickle_string_to_obj(req['current_weights'])
 
         self.local_model.set_weights(weights)
-        my_weights, train_loss = self.local_model.train_one_round(req['p1'],req['round_number'])
+        my_weights, train_loss = self.local_model.train_one_round()
 
         header = b'OPERATE'
         resp = json.dumps({
