@@ -1,6 +1,7 @@
 import warnings
 warnings.filterwarnings("ignore")
 
+import os
 os.environ["CUDA_VISIBLE_DEVICES"] = ""  # -1 to use CPU
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'  # 0 = all logs, 1 = filter out INFO, 2 = WARNING, 3 = ERROR
 
@@ -8,7 +9,6 @@ import numpy as np
 import keras
 import random
 import matplotlib.pyplot as plt
-import os
 import pandas as pd
 from keras.layers import Input,Dropout,Dense
 from keras.models import Model
