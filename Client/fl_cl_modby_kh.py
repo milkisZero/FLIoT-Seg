@@ -210,8 +210,8 @@ class FederatedClient(object):
         except Exception as e:
             print(f"Error sending additional results: {e}")
 
-    def on_request_update(self, message):
-        req = message
+    def on_request_update(self, *args):
+        req = args[0]
         print("update requested")
         print('round_number:', req['round_number'])
 
@@ -249,8 +249,8 @@ class FederatedClient(object):
         }
         self.send_additional_metrics(additional_metrics)
 
-    def on_stop_and_eval(self, message):
-        req = message
+    def on_stop_and_eval(self, *args):
+        req = args[0]
         if req['weights_format'] == 'pickle':
             weights = pickle_string_to_obj(req['current_weights'])
         self.local_model.set_weights(weights)
