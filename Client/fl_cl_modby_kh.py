@@ -226,7 +226,7 @@ class FederatedClient(object):
         req = args[0]
         print("global update requested")
 
-        self.local_model = LocalModel(req, self.datasource)
+        self.local_model.model = model_from_json(req['model_json'])
         if req['weights_format'] == 'pickle':
             weights = pickle_string_to_obj(req['current_weights'])
         self.local_model.set_weights(weights)
