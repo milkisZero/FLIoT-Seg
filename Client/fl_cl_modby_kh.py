@@ -24,7 +24,7 @@ import codecs
 from keras.models import model_from_json
 from pickle_utils import obj_to_pickle_string, pickle_string_to_obj
 from sklearn.metrics import f1_score,precision_score,recall_score,accuracy_score,confusion_matrix,roc_curve,auc
-from dataset2CICIDS import gen_train_valid_data
+from dataset1CICIDS import gen_train_valid_data
 import datetime,time
 import socket
 import struct
@@ -179,8 +179,8 @@ class FederatedClient(object):
                 self.on_request_update(message['payload'])
             elif event == 'stop_and_eval' or event == 'request_eval':
                 self.on_eval(message['payload'])
-            # elif event == 'global_update':
-            #     self.on_global_update(message['payload'])
+            elif event == 'global_update':
+                self.on_global_update(message['payload'])
             else:
                 print("Unknown event:", event)
         else:
