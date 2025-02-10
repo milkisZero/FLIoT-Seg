@@ -22,7 +22,7 @@ import json
 import pickle
 import codecs
 from keras.models import model_from_json
-from fl_server import obj_to_pickle_string, pickle_string_to_obj
+from pickle_utils import obj_to_pickle_string, pickle_string_to_obj
 from sklearn.metrics import f1_score,precision_score,recall_score,accuracy_score,confusion_matrix,roc_curve,auc
 from dataset1CICIDS import gen_train_valid_data
 import datetime,time
@@ -107,14 +107,19 @@ class FederatedClient(object):
         self.tcp_socket.connect((server_host, server_port))
         
         self.eval_lock = threading.Lock()
-        self.receive_tcp_message()
+        
+        # TCP 메시지 수신을 별도의 쓰레드에서 실행하여 메인 쓰레드가 블로킹되지 않도록 합니다.
+        self.tcp_receive_thread = threading.Thread(target=self.receive_tcp_messages, daemon=True)
+        self.tcp_receive_thread.start()
+        
         self.test_interval = 60
+        # 지속적인 테스트 평가를 위한 쓰레드 실행
         self.testing_thread = threading.Thread(target=self.continuous_testing, daemon=True)
         self.testing_thread.start()
 
         print("sent wakeup")
-        message=json.dumps({
-            'event' : 'client_wake_up'
+        message = json.dumps({
+            'event': 'client_wake_up'
         })
         self.send_tcp_message('OPERATE', message)
         
