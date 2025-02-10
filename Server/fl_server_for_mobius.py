@@ -169,6 +169,7 @@ class FLServer(object):
     MAx_NUM_ROUNDS = 10#设定联邦循环次数
     NUM_CLIENTS_CONTACTED_PER_ROUND = 2#设置节点数量，作用，多少比例的掉队。
     ROUNDS_BETWEEN_VALIDATIONS = 2
+    WINDOW_SIZE = 2
 
     def __init__(self, global_model, host, port):
         self.global_model = global_model()
@@ -506,16 +507,16 @@ class FLServer(object):
             ############ Delete if occurs error #############
             #################################################
             
-            data={
-                'event': 'global_update',
-                'payload': {
-                    'model_json': self.global_model.model.to_json(),
-                    'model_id': self.model_id,
-                    'current_weights': obj_to_pickle_string(self.global_model.current_weights),
-                    'weights_format': 'pickle',
-                }
-            }
-            self.publish(client_id+'FromS', data)
+            # data={
+            #     'event': 'global_update',
+            #     'payload': {
+            #         'model_json': self.global_model.model.to_json(),
+            #         'model_id': self.model_id,
+            #         'current_weights': obj_to_pickle_string(self.global_model.current_weights),
+            #         'weights_format': 'pickle',
+            #     }
+            # }
+            # self.publish(client_id+'FromS', data)
             
             #################################################
             ############ Delete if occurs error #############
@@ -561,7 +562,13 @@ class FLServer(object):
                             self.stop_and_eval()
                             return
 
-                    if self.current_round >= FLServer.MAx_NUM_ROUNDS:
+                    # if self.current_round >= FLServer.MAx_NUM_ROUNDS:
+                    #     print("Maximum rounds reached. Triggering evaluation.")
+                    #     self.stop_and_eval()
+                    # else:
+                    #     self.train_next_round()
+                    
+                    if self.current_round % FLServer.MAx_NUM_ROUNDS == 0 and self.current_round > 0 :
                         print("Maximum rounds reached. Triggering evaluation.")
                         self.stop_and_eval()
                     else:
@@ -586,9 +593,11 @@ class FLServer(object):
                 # Otherwise, training is complete. Print total training time cost.
                 total_training_time = time.time() - self.global_model.training_start_time
                 print('Total training time cost:', total_training_time)
-            self.eval_client_updates = None  # Prevent further evaluation
+            # self.eval_client_updates = None  # Prevent further evaluation
+            if len(self.eval_client_updates) == FLServer.NUM_CLIENTS_CONTACTED_PER_ROUND:
+                self.train_next_round()
 
-    # Note: we assume that during training the #workers will be >= MIN_NUM_WORKERS
+    # Note: we assume that during training thlen(e #workers will be >= MI)N_NUM_WORKERS
     def train_next_round(self):
         self.current_round += 1
         # buffers all client updates
@@ -600,18 +609,18 @@ class FLServer(object):
         ############ Delete if occurs error #############
         #################################################
         
-        for rid in list(self.ready_client_sids):
-            data = {
-                'event': 'global_update',
-                'payload': {
-                    'model_json': self.global_model.model.to_json(),
-                    'model_id': self.model_id,
-                    'current_weights': obj_to_pickle_string(self.global_model.current_weights),
-                    'weights_format': 'pickle',
-                }
-            }
-            self.publish(rid+'FromS', data)
-        print("Broadcasted global update to all ready clients.")
+        # for rid in list(self.ready_client_sids):
+        #     data = {
+        #         'event': 'global_update',
+        #         'payload': {
+        #             'model_json': self.global_model.model.to_json(),
+        #             'model_id': self.model_id,
+        #             'current_weights': obj_to_pickle_string(self.global_model.current_weights),
+        #             'weights_format': 'pickle',
+        #         }
+        #     }
+        #     self.publish(rid+'FromS', data)
+        # print("Broadcasted global update to all ready clients.")
         
         client_sids_selected = random.sample(list(self.ready_client_sids), FLServer.NUM_CLIENTS_CONTACTED_PER_ROUND)#为了提取出N个不同元素的样本用来(所有内容，需要的数量)
         print("request updates from", client_sids_selected)
@@ -640,19 +649,19 @@ class FLServer(object):
         ############ Delete if occurs error #############
         #################################################
 
-        if self.current_round % FLServer.ROUNDS_BETWEEN_VALIDATIONS == 0:
-            print("Round {} is a validation round; requesting evaluation from all clients.".format(self.current_round))
-            for rid in list(self.ready_client_sids):
-                data = {
-                    'event': 'request_eval',
-                    'payload': {
-                        'model_id': self.model_id,
-                        'round_number': self.current_round,
-                        'current_weights': obj_to_pickle_string(self.global_model.current_weights),
-                        'weights_format': 'pickle',
-                    }
-                }
-                self.publish(rid+'FromS', data)
+        # if self.current_round % FLServer.ROUNDS_BETWEEN_VALIDATIONS == 0:
+        #     print("Round {} is a validation round; requesting evaluation from all clients.".format(self.current_round))
+        #     for rid in list(self.ready_client_sids):
+        #         data = {
+        #             'event': 'request_eval',
+        #             'payload': {
+        #                 'model_id': self.model_id,
+        #                 'round_number': self.current_round,
+        #                 'current_weights': obj_to_pickle_string(self.global_model.current_weights),
+        #                 'weights_format': 'pickle',
+        #             }
+        #         }
+        #         self.publish(rid+'FromS', data)
 
         #################################################
         ############ Delete if occurs error #############
