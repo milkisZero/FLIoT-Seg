@@ -177,12 +177,10 @@ class FederatedClient(object):
                 self.on_init(message['payload'])
             elif event == 'request_update':
                 self.on_request_update(message['payload'])
-            elif event == 'stop_and_eval':
-                self.on_stop_and_eval(message['payload'])
+            elif event == 'stop_and_eval' or event == 'request_eval':
+                self.on_eval(message['payload'])
             # elif event == 'global_update':
             #     self.on_global_update(message['payload'])
-            # elif event == 'request_eval':
-            #     self.on_request_eval(message['payload'])
             else:
                 print("Unknown event:", event)
         else:
@@ -224,6 +222,15 @@ class FederatedClient(object):
         except Exception as e:
             print(f"Error sending additional results: {e}")
 
+    def on_global_update(self, *args):
+        req = args[0]
+        print("global update requested")
+
+        self.local_model = LocalModel(req, self.datasource)
+        if req['weights_format'] == 'pickle':
+            weights = pickle_string_to_obj(req['current_weights'])
+        self.local_model.set_weights(weights)
+
     def on_request_update(self, *args):
         req = args[0]
         print("update requested")
@@ -263,7 +270,7 @@ class FederatedClient(object):
         }
         self.send_additional_metrics(additional_metrics)
 
-    def on_stop_and_eval(self, *args):
+    def on_eval(self, *args):
         req = args[0]
         if req['weights_format'] == 'pickle':
             weights = pickle_string_to_obj(req['current_weights'])
@@ -272,15 +279,20 @@ class FederatedClient(object):
         time_end = time.time()
         print('\033[1;35;0m Time cost = %fs \033[0m' % (time_end - time_start))
         #test_loss, test_accuracy = self.local_model.evaluate()
+        payload={
+            'test_size': self.local_model.x_test.shape[0],
+            #'test_loss': test_loss,
+            #'test_accuracy': test_accuracy
+        }
+        if 'round_number' in req:
+            payload['round_number'] = req['round_number']
+
         header = b'OPERATE'
         resp = json.dumps({
             'event': 'client_eval',
-            'payload': {
-                'test_size': self.local_model.x_test.shape[0],
-                #'test_loss': test_loss,
-                #'test_accuracy': test_accuracy
-            }
+            'payload': payload
         })
+
 
         self.send_tcp_message(header, resp)
 
