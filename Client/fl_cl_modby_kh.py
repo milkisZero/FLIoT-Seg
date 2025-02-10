@@ -104,9 +104,19 @@ class FederatedClient(object):
         self.local_model = None
         self.datasource = datasource
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.tcp_socket.connect((server_host, server_port))
+        try:
+            self.tcp_socket.connect((server_host, server_port))
+        except Exception as e:
+            print("TCP 소켓 연결 실패:", e)
+            # 재연결 로직 추가
         
         self.eval_lock = threading.Lock()
+        self.socket_lock = threading.Lock()
+        
+        # TCP 메시지 수신을 별도의 쓰레드에서 실행하여 메인 쓰레드가 블로킹되지 않도록 합니다.
+        self.tcp_receive_thread = threading.Thread(target=self.receive_tcp_messages, daemon=True)
+        self.tcp_receive_thread.start()
+        
         self.test_interval = 60
         # 지속적인 테스트 평가를 위한 쓰레드 실행
         self.testing_thread = threading.Thread(target=self.continuous_testing, daemon=True)
@@ -117,9 +127,7 @@ class FederatedClient(object):
             'event': 'client_wake_up'
         })
         self.send_tcp_message('OPERATE', message)
-        
-        self.receive_tcp_messages()
-        
+
     def continuous_testing(self):
         while True:
             time.sleep(self.test_interval)
@@ -147,10 +155,9 @@ class FederatedClient(object):
                 json_message = b""
                 while len(json_message) != message_length:
                     chunk = self.tcp_socket.recv(1024)
-                    #print(len(chunk))
-                    # if len(chunk) == 0 :
-                    #     # 연결이 끊김
-                    #     break
+                    if not chunk:
+                        print("연결이 끊어졌습니다.")
+                        break
                     json_message += chunk
       #          print(json_message)
                 message_data = json.loads(json_message)
@@ -229,7 +236,8 @@ class FederatedClient(object):
         self.local_model.model = model_from_json(req['model_json'])
         if req['weights_format'] == 'pickle':
             weights = pickle_string_to_obj(req['current_weights'])
-        self.local_model.set_weights(weights)
+        with self.eval_lock:
+            self.local_model.set_weights(weights)
 
     def on_request_update(self, *args):
         req = args[0]
@@ -239,7 +247,8 @@ class FederatedClient(object):
         if req['weights_format'] == 'pickle':
             weights = pickle_string_to_obj(req['current_weights'])
 
-        self.local_model.set_weights(weights)
+        with self.eval_lock:
+            self.local_model.set_weights(weights)
         my_weights, train_loss = self.local_model.train_one_round()
 
         header = b'OPERATE'
@@ -274,7 +283,8 @@ class FederatedClient(object):
         req = args[0]
         if req['weights_format'] == 'pickle':
             weights = pickle_string_to_obj(req['current_weights'])
-        self.local_model.set_weights(weights)
+        with self.eval_lock:
+            self.local_model.set_weights(weights)
         f1, precision, recall = self.local_model.evaluate1()
         time_end = time.time()
         print('\033[1;35;0m Time cost = %fs \033[0m' % (time_end - time_start))
@@ -308,9 +318,9 @@ class FederatedClient(object):
             if not isinstance(header, bytes):
                 header=header.encode()
             if not isinstance(message, bytes):
-                message_encode=message.encode()
+                message_encode = message.encode()
             self.tcp_socket.send(header)
-            self.tcp_socket.send(struct.pack('>I', len(message)))
+            self.tcp_socket.send(struct.pack('>I', len(message_encode)))
             self.tcp_socket.sendall(message_encode)
         except Exception as e:
             print(f"Error sending message: {e}")
