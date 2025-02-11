@@ -1,0 +1,17 @@
+  client{NUM}:
+    build:
+      context: ./Client
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    container_name: federated_client{NUM}
+    dockerfile:
+      - Dockerfile
+    networks:
+      federated_network:
+        ipv4_address: {IP}
+    volumes:
+      - ./Client/CICIDS_Splitted/client{NUM}_train.csv:/app/CICIDS_Splitted/client_train.csv
+      - ./Client/CICIDS_Splitted/client{NUM}_test.csv:/app/CICIDS_Splitted/client_test.csv
+    depends_on:
+      - gateway

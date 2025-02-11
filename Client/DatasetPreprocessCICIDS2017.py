@@ -1,3 +1,4 @@
+import sys
 import os
 import glob
 import pandas as pd
@@ -167,7 +168,12 @@ def main():
 
     # 6. Ask the user for the number of clients and client ratios.
     try:
-        num_clients = int(input("\nEnter the number of clients to divide the data into: "))
+        args = sys.argv[1:]
+        if len(args) == 1:
+            num_clients = int(args[0])
+            print(f"Using {num_clients} clients from command line argument.")
+        else:
+            num_clients = int(input("\nEnter the number of clients to divide the data into: "))
     except ValueError:
         print("Invalid number of clients")
         return

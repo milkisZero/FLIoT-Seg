@@ -3,16 +3,20 @@ let { nanoid } = require('nanoid');
 let net = require('net');
 const fs = require('fs');
 const path = require('path');
-let serverAddress = '192.168.0.10';
+if (process.env.CLIENT) serverAddress = '192.168.0.10';
+else serverAddress = 'gateway';
 let serverPort = 3105;
 const HEADER_SIZE = 7; // 'WEIGHTS' 또는 'METRICS' 헤더의 크기
+
+if (process.env.CLIENT) host = '192.168.0.60';
+else host = 'server';
 
 let tas = {
     client: {
         connected: false,
     },
     connection: {
-        host: '192.168.0.60',
+        host: host,
         port: 1883,
         endpoint: '',
         clean: true,

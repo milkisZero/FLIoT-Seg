@@ -27,8 +27,12 @@ conf.useprotocol = 'mqtt'; // select one for 'http' or 'mqtt' or 'coap' or 'ws'
 conf.sim = 'disable'; // enable or disable
 
 // build cse
+
+if (process.env.CLIENT) host = 'server';
+else host = '192.168.0.60';
+
 cse = {
-    host: '192.168.0.60',
+    host: host,
     port: '7579',
     name: 'Mobius',
     id: '/Mobius2',
@@ -110,7 +114,7 @@ let tas = {
     },
 
     connection: {
-        host: '192.168.0.60',
+        host: host,
         port: 1883,
         endpoint: '',
         clean: true,

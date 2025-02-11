@@ -1,0 +1,67 @@
+version: '3'
+networks:
+  federated_network:
+    driver: bridge
+    ipam:
+      config:
+        - gateway: 172.20.0.1
+        - subnet: 172.20.0.0/24
+
+services:
+  server:
+    build:
+      context: ./Server
+      dockerfile: Dockerfile
+    container_name: federated_server
+    env_file:
+      - .env
+    networks:
+      federated_network:
+        ipv4_address: 172.20.0.2
+
+  gateway:
+    build:
+      context: ./nCube
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    container_name: gateway
+    networks:
+      federated_network:
+        ipv4_address: 172.20.0.3
+    depends_on:
+      - server
+  client1:
+    build:
+      context: ./Client
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    container_name: federated_client1
+    dockerfile:
+      - Dockerfile
+    networks:
+      federated_network:
+        ipv4_address: 172.20.0.101
+    volumes:
+      - ./Client/CICIDS_Splitted/client1_train.csv:/app/CICIDS_Splitted/client_train.csv
+      - ./Client/CICIDS_Splitted/client1_test.csv:/app/CICIDS_Splitted/client_test.csv
+    depends_on:
+      - gateway
+  client2:
+    build:
+      context: ./Client
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    container_name: federated_client2
+    dockerfile:
+      - Dockerfile
+    networks:
+      federated_network:
+        ipv4_address: 172.20.0.102
+    volumes:
+      - ./Client/CICIDS_Splitted/client2_train.csv:/app/CICIDS_Splitted/client_train.csv
+      - ./Client/CICIDS_Splitted/client2_test.csv:/app/CICIDS_Splitted/client_test.csv
+    depends_on:
+      - gateway

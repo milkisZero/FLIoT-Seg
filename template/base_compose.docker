@@ -1,0 +1,33 @@
+version: '3'
+networks:
+  federated_network:
+    driver: bridge
+    ipam:
+      config:
+        - gateway: ${GATEWAY}
+        - subnet: ${DOCKER_NETWORK}0/24
+
+services:
+  server:
+    build:
+      context: ./Server
+      dockerfile: Dockerfile
+    container_name: federated_server
+    env_file:
+      - .env
+    networks:
+      federated_network:
+        ipv4_address: ${SERVER_IP}
+
+  gateway:
+    build:
+      context: ./nCube
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    container_name: gateway
+    networks:
+      federated_network:
+        ipv4_address: ${NCUBE_IP}
+    depends_on:
+      - server
