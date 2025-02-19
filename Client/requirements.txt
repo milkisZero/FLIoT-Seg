@@ -4,7 +4,7 @@ cachetools==5.5.0
 certifi==2024.12.14
 charset-normalizer==3.4.1
 click==8.1.8
-colorama @ file:///home/conda/feedstock_root/build_artifacts/colorama_1666700638685/work
+colorama==0.4.6
 cycler==0.11.0
 Flask==2.1.1
 Flask-SocketIO==4.3.1
@@ -60,11 +60,11 @@ tensorboard-data-server==0.6.1
 tensorboard-plugin-wit==1.8.1
 tensorflow==2.10.0
 tensorflow-estimator==2.10.0
-tensorflow-io-gcs-filesystem==0.34.0
+tensorflow-io-gcs-filesystem
 termcolor==2.3.0
 threadpoolctl==3.1.0
 tifffile==2021.11.2
-tqdm @ file:///home/conda/feedstock_root/build_artifacts/tqdm_1732497199771/work
+tqdm==4.67.1
 typing_extensions==4.7.1
 urllib3==2.0.7
 websocket-client==1.6.1

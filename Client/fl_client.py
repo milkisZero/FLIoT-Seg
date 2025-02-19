@@ -2,8 +2,34 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = ""  # -1 to use CPU
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'  # 0 = all logs, 1 = filter out INFO, 2 = WARNING, 3 = ERROR
+import tensorflow as tf
+import psutil
+import subprocess
+import pynvml
+
+# Check available GPU list
+gpus = tf.config.list_physical_devices('GPU')
+if not gpus:
+    print("No available GPU. Use CPU.")
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+else:
+    print("Available GPU list:")
+    for idx, gpu in enumerate(gpus):
+        print(f"  {idx}: {gpu.name}")
+        
+    selected_gpu = input("Select the index of the GPU to use (-1: use CPU): ").strip()
+    try:
+        selected_gpu = int(selected_gpu)
+    except ValueError:
+        print("Invalid input. Using default GPU 0.")
+        selected_gpu = 0
+
+    if selected_gpu == -1:
+        os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    else:
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(selected_gpu)
+
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'  # 0 = all logs, 1 = INFO 필터, 2 = WARNING 필터, 3 = ERROR 필터
 
 import numpy as np
 import keras
@@ -28,18 +54,26 @@ from datasetCICIDS import gen_train_valid_data
 import datetime,time
 import socket
 import struct
+from tensorflow.keras.optimizers import RMSprop
+import tensorflow as tf
+import resource  # 메모리 측정을 위한 리소스 모듈 임포트
 
 print("now is {}".format(datetime.datetime.today()))
 datasource= gen_train_valid_data()
 import threading
+import signal
+import sys
 
-# TCP 클라이언트 설정
+# TCP client settings
 if os.environ.get('CLIENT') is not None:
-    TCP_SERVER_IP = 'gateway'  # 수신 라즈베리파이의 IP 주소
+    TCP_SERVER_IP = 'gateway'  # IP address of the receiving Raspberry Pi
     TCP_SERVER_PORT = 3105
 else:
     TCP_SERVER_IP = '192.168.0.10'  # 수신 라즈베리파이의 IP 주소
     TCP_SERVER_PORT = 3105
+
+# 전역 변수로 client_instance 선언 (초기값은 None)
+client_instance = None
 
 class LocalModel(object):
     def __init__(self, model_config, data_collected):
@@ -55,19 +89,29 @@ class LocalModel(object):
 
     # return final weights, train loss, train accuracy
     def train_one_round(self):
+        start_time = time.time()
         self.model.compile(loss=keras.losses.mean_squared_error,
-                           optimizer=keras.optimizers.RMSprop(),
+                           optimizer=RMSprop(),
                            metrics=['accuracy'])
         self.loss = self.model.fit(
             self.x_train, self.x_train,
             epochs=self.model_config['epoch_per_round'],
             batch_size=self.model_config['batch_size'],
             validation_data=(self.x_test, self.x_test),
-            verbose=1
+            verbose=2
         )
+        end_time = time.time()
+        train_time = end_time - start_time
+
+        # 리소스를 이용하여 최고 메모리 사용량(킬로바이트 단위)을 측정하고 MB 단위로 변환
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        peak_memory_mb = usage.ru_maxrss / 1024
+
         current_loss = self.loss.history['loss'][0]
         print('One round training loss: {:.16f}'.format(current_loss))
-        return self.model.get_weights(), current_loss
+        print('이 라운드 학습 시간: {:.4f} 초, 최고 메모리 사용량: {:.2f} MB'.format(train_time, peak_memory_mb))
+            
+        return self.model.get_weights(), current_loss, train_time, peak_memory_mb
 
     def evaluate1(self):
         def calculate_losses(x, preds):
@@ -78,7 +122,7 @@ class LocalModel(object):
 
         # Always compute threshold using the current training set predictions.
         print("Computing threshold from training data predictions...")
-        train_preds = self.model.predict(self.x_train, verbose=1)
+        train_preds = self.model.predict(self.x_train, batch_size=16, verbose=1)
         train_losses = calculate_losses(self.x_train, train_preds)
         # Changed threshold percentile from 90 to 99 for better anomaly separation.
         threshold = np.percentile(train_losses, 99)
@@ -117,12 +161,14 @@ class FederatedClient(object):
         self.eval_lock = threading.Lock()
         self.socket_lock = threading.Lock()
         
-        # TCP 메시지 수신을 별도의 쓰레드에서 실행하여 메인 쓰레드가 블로킹되지 않도록 합니다.
-        self.tcp_receive_thread = threading.Thread(target=self.receive_tcp_messages, daemon=True)
-        self.tcp_receive_thread.start()
-        
-        self.test_interval = 60
+        # 프로그램 최초 실행 시간으로 폴더 생성 (예: 20231026_123456)
+        self.execution_folder = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        if not os.path.exists(self.execution_folder):
+            os.makedirs(self.execution_folder)
+        print(f"데이터가 저장될 폴더: {self.execution_folder}")
+
         # 지속적인 테스트 평가를 위한 쓰레드 실행
+        self.test_interval = 60
         self.testing_thread = threading.Thread(target=self.continuous_testing, daemon=True)
         self.testing_thread.start()
 
@@ -131,6 +177,16 @@ class FederatedClient(object):
             'event': 'client_wake_up'
         })
         self.send_tcp_message('OPERATE', message)
+        self.receive_tcp_messages()
+
+        gpus = tf.config.experimental.list_physical_devices('GPU')
+        if gpus:
+            try:
+                # 프로그램 초기에 한 번만 모든 GPU에 대해 메모리 증분 할당 활성화
+                for gpu in gpus:
+                    tf.config.experimental.set_memory_growth(gpu, True)
+            except RuntimeError as e:
+                print("GPU 메모리 증분 할당 설정 중 오류 발생:", e)
 
     def continuous_testing(self):
         while True:
@@ -149,27 +205,31 @@ class FederatedClient(object):
                 print("[Continuous Testing] Local model or evaluation method not ready.")
 
     def receive_tcp_messages(self):
+        def recv_exactly(size):
+            # 정확히 size 바이트만큼 수신 
+            data = b""
+            while len(data) < size:
+                chunk = self.tcp_socket.recv(size - len(data))
+                if not chunk:
+                    raise ConnectionError("연결이 끊어졌습니다.")
+                data += chunk
+                # print('chunk: ' , len(chunk))
+                # print('total: ' , len(data))
+            return data
+         
         while True:
             try:
-                message_length_bytes = self.tcp_socket.recv(4)
+                message_length_bytes = recv_exactly(4)
                 message_length = int.from_bytes(message_length_bytes, byteorder='big')
-                print('sum : ', message_length)
+                print('message_length sum : ', message_length)
                 #json_message = self.tcp_socket.recv(65535).decode('utf-8')
 
-                json_message = b""
-                while len(json_message) != message_length:
-                    chunk = self.tcp_socket.recv(1024)
-                    if not chunk:
-                        print("연결이 끊어졌습니다.")
-                        break
-                    json_message += chunk
-      #          print(json_message)
+                json_message = recv_exactly(message_length)                 
                 message_data = json.loads(json_message)
      #           print(message_data)
                 header = message_data['header']
                 message = message_data['message']
-                # print(header)
-                # print(message)
+
                 self.handle_message(header, message)
             except Exception as e:
                 print("Error receiving message:", e)
@@ -209,18 +269,33 @@ class FederatedClient(object):
     def on_init(self, *args):
         model_config = args[0]
         print("Init message received:", model_config)
-        # 추가적인 초기화 로직
+        
+        # model_json을 json 형식으로 변환하여 저장: 문자열을 딕셔너리로 변환
+        try:
+            model_config_converted = model_config.copy()
+            model_config_converted["model_json"] = json.loads(model_config_converted["model_json"])
+        except Exception as e:
+            print("model_json 변환 오류:", e)
+            model_config_converted = model_config
+        
+        # 모델 및 설정 초기화
         self.local_model = LocalModel(model_config, self.datasource)
-
+        
+        # 모델 구성 정보(예, 에폭, 배치 사이즈, model_json 등)를 최초 실행 폴더에 저장 (한 번만 저장)
+        config_file = os.path.join(self.execution_folder, "model_config.json")
+        if not os.path.exists(config_file):
+            with open(config_file, "w") as f:
+                json.dump(model_config_converted, f, indent=4)
+            print(f"모델 및 설정 정보가 {config_file} 에 저장되었습니다.")
+        
         header = b'OPERATE'
         FL_ready = json.dumps({
-                'event': 'client_ready',
-                'payload': {
-                    'train_size': self.local_model.x_train.shape[0],
-                    #'class_distr': my_class_distr  # for debugging, not needed in practice
-                }
-            })
-        # ready to be dispatched for training
+            'event': 'client_ready',
+            'payload': {
+                'train_size': self.local_model.x_train.shape[0],
+                # 'class_distr': my_class_distr  # for debugging, not needed in practice
+            }
+        })
         self.send_tcp_message(header, FL_ready)
 
     def send_additional_results(self, results):
@@ -243,18 +318,59 @@ class FederatedClient(object):
         with self.eval_lock:
             self.local_model.set_weights(weights)
 
+    def save_round_time(self, round_number, train_time, peak_memory):
+        """
+        각 라운드의 학습 시간, 최고 메모리 사용량, 라운드 번호, 그리고 실행 장치(CPU 또는 GPU)를
+        프로그램 최초 실행 시간으로 생성된 폴더 내의 JSON 파일에 저장합니다.
+        파일명은 사용 장치에 따라 "cpu_round_times.json" 또는 "gpu_round_times.json"으로 생성됩니다.
+        """
+        folder = self.execution_folder
+        # 사용 장치 판별: CUDA_VISIBLE_DEVICES가 설정되어 있고, GPU 목록이 존재하면 GPU, 아니라면 CPU
+        device = "gpu" if tf.config.list_physical_devices("GPU") and os.environ.get("CUDA_VISIBLE_DEVICES", "") != "" else "cpu"
+        file_name = os.path.join(folder, f"{device}_round_times.json")
+
+        # 기존 데이터 있으면 불러오기
+        if os.path.exists(file_name):
+            with open(file_name, "r") as f:
+                try:
+                    data = json.load(f)
+                except Exception as e:
+                    print("JSON 파일 로드 오류:", e)
+                    data = []
+        else:
+            data = []
+
+        # 새 데이터를 추가
+        data.append({
+            "round_number": round_number,
+            "train_time": train_time,
+            "peak_memory": peak_memory,
+            "device": device
+        })
+
+        # 파일에 저장
+        with open(file_name, "w") as f:
+            json.dump(data, f, indent=4)
+        print(f"Round {round_number} 학습 시간 {train_time:.4f}초, 최고 메모리 사용량 {peak_memory:.2f} MB (장치: {device})가 {file_name} 에 저장되었습니다.")
+
     def on_request_update(self, *args):
         req = args[0]
         print("update requested")
         print('round_number:', req['round_number'])
-
+    
         if req['weights_format'] == 'pickle':
             weights = pickle_string_to_obj(req['current_weights'])
-
+    
         with self.eval_lock:
             self.local_model.set_weights(weights)
-        my_weights, train_loss = self.local_model.train_one_round()
-
+        
+        # 학습 라운드 진행 시 시간 및 메모리 사용량 측정값 반환
+        my_weights, train_loss, train_time, peak_memory = self.local_model.train_one_round()
+    
+        # 라운드 번호, 학습 시간, 최고 메모리 사용량, 장치 정보를 프로그램 최초 실행 폴더 내의 파일에 저장
+        self.save_round_time(req['round_number'], train_time, peak_memory)
+    
+        # 전송하는 정보(payload)는 원래대로 전송합니다.
         header = b'OPERATE'
         resp = json.dumps({
             'event': 'client_update',
@@ -262,18 +378,11 @@ class FederatedClient(object):
                 'round_number': req['round_number'],
                 'weights': obj_to_pickle_string(my_weights),
                 'train_size': self.local_model.x_train.shape[0],
-                'train_loss': train_loss,
+                'train_loss': train_loss
             }
         })
-
-        # 피클 파일 생성 및 전송
-        filename = f"weights_round_{req['round_number']}.pkl"
-        self.send_blob_data(my_weights, filename)
-
-        # SocketIO를 사용하여 'client_update' 이벤트 전송
         self.send_tcp_message(header, resp)
-
-        # 추가 메트릭을 TCP 소켓을 통해 192.168.0.10:3105로 전송
+    
         additional_metrics = {
             'round_number': req['round_number'],
             'loss': self.local_model.loss.history['loss'][-1],
@@ -355,4 +464,4 @@ class FederatedClient(object):
 
 if __name__ == "__main__":
     time_start = time.time()
-    FederatedClient(TCP_SERVER_IP, TCP_SERVER_PORT, datasource)
+    client_instance = FederatedClient(TCP_SERVER_IP, TCP_SERVER_PORT, datasource)

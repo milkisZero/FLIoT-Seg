@@ -43,8 +43,6 @@ fi
 
 # 기본 네트워크와 서비스(서버, ncube)의 IP 계산
 GATEWAY="${DOCKER_NETWORK}1"
-SERVER_IP="${DOCKER_NETWORK}2"
-NCUBE_IP="${DOCKER_NETWORK}3"
 
 # 기본 docker-compose 설정 파일(base_compose.yaml)이 존재하는지 확인 후,
 # sed를 통해 변수 치환하여 docker-compose.yaml 파일 생성
@@ -54,8 +52,6 @@ if [ ! -f "$BASE_FILE" ]; then
 fi
 
 sed -e "s/\${GATEWAY}/$GATEWAY/g" \
-    -e "s/\${SERVER_IP}/$SERVER_IP/g" \
-    -e "s/\${NCUBE_IP}/$NCUBE_IP/g" \
     -e "s/\${DOCKER_NETWORK}/$DOCKER_NETWORK/g" "$BASE_FILE" > "$COMPOSE_FILE"
 
 # docker-compose.yaml 파일 내의 services: 블록에 Client 항목을 추가
@@ -67,17 +63,6 @@ for (( i = 1; i <= CLIENT; i++ )); do
 
   echo "Client${i} 설정 (IP: ${CLIENT_IP}) 추가 중..."
   sed -e "s/{NUM}/$i/g" -e "s/{IP}/$CLIENT_IP/g" "$TEMPLATE_FILE" >> "$COMPOSE_FILE"
-done
-
-# 각 Client 폴더 내의 Dockerfile 수정 (플레이스홀더 __CLIENT_NUMBER__를 치환)
-for (( i = 1; i <= CLIENT; i++ )); do
-  CLIENT_DOCKERFILE="Client${i}/Dockerfile"
-  if [ -f "$CLIENT_DOCKERFILE" ]; then
-    sed -i "s/__CLIENT_NUMBER__/$i/g" "$CLIENT_DOCKERFILE"
-    echo "Modified $CLIENT_DOCKERFILE: __CLIENT_NUMBER__ -> $i"
-  else
-    echo "$CLIENT_DOCKERFILE 파일이 존재하지 않습니다."
-  fi
 done
 
 # 현재 스크립트 위치 기준으로 Client 폴더로 이동

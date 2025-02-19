@@ -1,0 +1,68 @@
+[
+    {
+        "round_number": 0,
+        "train_time": 7.283555746078491,
+        "peak_memory": 784.8515625,
+        "device": "cpu"
+    },
+    {
+        "round_number": 1,
+        "train_time": 6.481448173522949,
+        "peak_memory": 784.8515625,
+        "device": "cpu"
+    },
+    {
+        "round_number": 2,
+        "train_time": 6.501948356628418,
+        "peak_memory": 784.8515625,
+        "device": "cpu"
+    },
+    {
+        "round_number": 3,
+        "train_time": 6.523716449737549,
+        "peak_memory": 920.64453125,
+        "device": "cpu"
+    },
+    {
+        "round_number": 4,
+        "train_time": 6.968491792678833,
+        "peak_memory": 970.14453125,
+        "device": "cpu"
+    },
+    {
+        "round_number": 5,
+        "train_time": 7.476309537887573,
+        "peak_memory": 972.26953125,
+        "device": "cpu"
+    },
+    {
+        "round_number": 6,
+        "train_time": 7.695759057998657,
+        "peak_memory": 972.26953125,
+        "device": "cpu"
+    },
+    {
+        "round_number": 7,
+        "train_time": 6.423976898193359,
+        "peak_memory": 983.89453125,
+        "device": "cpu"
+    },
+    {
+        "round_number": 8,
+        "train_time": 6.461131572723389,
+        "peak_memory": 1017.15625,
+        "device": "cpu"
+    },
+    {
+        "round_number": 9,
+        "train_time": 6.425654172897339,
+        "peak_memory": 1066.83984375,
+        "device": "cpu"
+    },
+    {
+        "round_number": 10,
+        "train_time": 7.305999755859375,
+        "peak_memory": 1114.46484375,
+        "device": "cpu"
+    }
+]

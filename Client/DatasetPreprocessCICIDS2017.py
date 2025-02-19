@@ -5,7 +5,9 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+from dotenv import load_dotenv
 
+load_dotenv()
 
 def partial_shuffle_df(df, intensity, random_state=None):
     """
@@ -153,7 +155,10 @@ def main():
     unique_labels = list(label_counts.index)
     # --- End of Added Section ---
 
-    selected_idx_str = input("\nEnter the index(es) of the label types to keep (space separated, e.g., 0 2): ")
+    selected_idx_str = os.getenv("LABEL", "").strip()
+    print(f"Selected index string: {selected_idx_str}")
+    if not selected_idx_str:
+        selected_idx_str = input("\nEnter the index(es) of the label types to keep (space separated, e.g., 0 2): ")
     try:
         selected_indices = [int(x.strip()) for x in selected_idx_str.split()]
         selected_labels = [unique_labels[i] for i in selected_indices]
@@ -178,8 +183,9 @@ def main():
         print("Invalid number of clients")
         return
 
-    client_ratios_str = input(
-        "Enter the ratio for each client (space separated numbers, e.g., 1 1 1 for equal division): ")
+    client_ratios_str = os.getenv("RATIO", "").strip()
+    if not client_ratios_str:
+        client_ratios_str = input("Enter the ratio for each client (space separated numbers, e.g., 1 1 1 for equal division): ")
     try:
         client_ratios = [float(x.strip()) for x in client_ratios_str.split()]
     except ValueError:
@@ -194,7 +200,9 @@ def main():
     client_ratios = [r / total_ratio for r in client_ratios]
 
     # 7. Ask for training ratios for each client (all at once).
-    train_ratios_str = input("Enter the training ratio for each client (space separated numbers, e.g., 0.6 0.7 0.8): ")
+    train_ratios_str = os.getenv("TR_RATIO", "").strip()
+    if not train_ratios_str:
+        train_ratios_str = input("Enter the training ratio for each client (space separated numbers, e.g., 0.6 0.7 0.8): ")
     try:
         train_ratios = [float(x.strip()) for x in train_ratios_str.split()]
     except ValueError:
@@ -211,7 +219,9 @@ def main():
             return
 
     # 8. Ask for shuffle intensity.
-    shuffle_intensity_str = input("Enter shuffle intensity (0 for no shuffle, 1 for full shuffle, e.g., 0.8): ")
+    shuffle_intensity_str = os.getenv("SHUFFLE_INTENSITY", "").strip()
+    if not shuffle_intensity_str:
+        shuffle_intensity_str = input("Enter shuffle intensity (0 for no shuffle, 1 for full shuffle, e.g., 0.8): ")
     try:
         shuffle_intensity = float(shuffle_intensity_str.strip())
     except ValueError:

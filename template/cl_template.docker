@@ -5,8 +5,6 @@
     env_file:
       - .env
     container_name: federated_client{NUM}
-    dockerfile:
-      - Dockerfile
     networks:
       federated_network:
         ipv4_address: {IP}

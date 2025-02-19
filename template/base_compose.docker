@@ -3,9 +3,10 @@ networks:
   federated_network:
     driver: bridge
     ipam:
+      driver: default
       config:
-        - gateway: ${GATEWAY}
         - subnet: ${DOCKER_NETWORK}0/24
+          gateway: ${GATEWAY}
 
 services:
   server:
@@ -17,7 +18,7 @@ services:
       - .env
     networks:
       federated_network:
-        ipv4_address: ${SERVER_IP}
+        ipv4_address: ${DOCKER_NETWORK}2
 
   gateway:
     build:
@@ -28,6 +29,56 @@ services:
     container_name: gateway
     networks:
       federated_network:
-        ipv4_address: ${NCUBE_IP}
+        ipv4_address: ${DOCKER_NETWORK}3
     depends_on:
       - server
+
+  db:
+    image: mysql:8.3.0
+    command: --default-authentication-plugin=mysql_native_password
+    restart: always
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_ROOT_PASSWORD: "dksdlfduq2"
+      MYSQL_DATABASE: "mobiusdb"
+    container_name: federated_db
+    networks:
+      federated_network:
+        ipv4_address: ${DOCKER_NETWORK}4
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./Mobius/mobius/mobiusdb.sql:/docker-entrypoint-initdb.d/mobiusdb.sql
+    healthcheck:
+            test: ["CMD", "mysqladmin" ,"--password=dksdlfduq2","ping"]
+            interval: 20s
+            timeout: 20s
+            retries: 5
+
+  mobius:
+    build:
+      context: ./Mobius
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    container_name: mobius
+    networks:
+      federated_network:
+        ipv4_address: ${DOCKER_NETWORK}5
+    depends_on:
+      db: 
+        condition: service_healthy  # db가 healthy 상태가 될 때까지 대기
+
+  mqtt:
+    image: eclipse-mosquitto:1.6
+    ports:
+      - "1883:1883"
+    container_name: federated_mqtt
+    networks:
+      federated_network:
+        ipv4_address: ${DOCKER_NETWORK}6
+    volumes:
+      - ./etc/mosquitto:/etc/mosquitto:ro
+      - ./var/log/mosquitto:/var/log/mosquitto:rw
+    depends_on:
+      - db

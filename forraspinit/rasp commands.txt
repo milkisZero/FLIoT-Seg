@@ -1,0 +1,16 @@
+wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-aarch64.sh
+
+chmod +x Miniforge3-Linux-aarch64.sh
+
+./Miniforge3-Linux-aarch64.sh
+
+source ~/miniforge3/bin/activate
+(or simply restart prompt)
+
+conda create -n FLIoT python=3.7
+
+conda activate FLIoT
+
+pip3 install -r requirements.txt
+
+python3 fl_client1.py

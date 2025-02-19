@@ -2,13 +2,9 @@ FROM node:20.18.0-alpine
 
 WORKDIR /app
 
-RUN git clone https://github.com/IoTKETI/nCube-Thyme-Nodejs.git
-
-WORKDIR /app/nCube-Thyme-Nodejs
+COPY . .
 
 RUN npm install
-
-COPY . .
 
 RUN chmod +x start.sh
 
