@@ -74,7 +74,7 @@ SUB_CNT_List = ['client1FromC', 'client2FromC']
 # 컨테이너 이름 , 이름/set == 토픽
 PUB_CNT_List = ['client1FromS', 'client2FromS']
 
-HOST = "python"
+HOST = "server"
 PORT = 5011
 
 class GlobalModel(object):#类文档字符串

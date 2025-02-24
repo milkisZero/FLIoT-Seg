@@ -5,7 +5,6 @@ import os
 import tensorflow as tf
 import psutil
 import subprocess
-import pynvml
 
 # Check available GPU list
 gpus = tf.config.list_physical_devices('GPU')

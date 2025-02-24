@@ -19,6 +19,8 @@ services:
     networks:
       federated_network:
         ipv4_address: ${DOCKER_NETWORK}2
+    volumes:
+      - ./Server/fl_server.py:/app/fl_server.py
 
   gateway:
     build:
@@ -78,7 +80,7 @@ services:
       federated_network:
         ipv4_address: ${DOCKER_NETWORK}6
     volumes:
-      - ./etc/mosquitto:/etc/mosquitto:ro
-      - ./var/log/mosquitto:/var/log/mosquitto:rw
+      - ./Mosquitto/etc/mosquitto:/etc/mosquitto:ro
+      - ./Mosquitto/var/log/mosquitto:/var/log/mosquitto:rw
     depends_on:
       - db

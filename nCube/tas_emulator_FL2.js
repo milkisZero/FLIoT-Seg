@@ -3,8 +3,8 @@ let { nanoid } = require('nanoid');
 let net = require('net');
 const fs = require('fs');
 const path = require('path');
-if (process.env.CLIENT) serverAddress = '192.168.0.10';
-else serverAddress = 'gateway';
+if (process.env.CLIENT) serverAddress = 'gateway';
+else serverAddress = '192.168.0.10';
 let serverPort = 3105;
 const HEADER_SIZE = 7; // 'WEIGHTS' 또는 'METRICS' 헤더의 크기
 
