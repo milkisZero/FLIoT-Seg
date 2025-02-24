@@ -7,8 +7,9 @@ import psutil
 import subprocess
 
 # Check available GPU list
+print("CLIENT: ", os.environ.get('CLIENT'))
 gpus = tf.config.list_physical_devices('GPU')
-if not gpus:
+if os.environ.get('CLIENT') is not None or not gpus:
     print("No available GPU. Use CPU.")
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
 else:
@@ -70,9 +71,6 @@ if os.environ.get('CLIENT') is not None:
 else:
     TCP_SERVER_IP = '192.168.0.10'  # 수신 라즈베리파이의 IP 주소
     TCP_SERVER_PORT = 3105
-
-# 전역 변수로 client_instance 선언 (초기값은 None)
-client_instance = None
 
 class LocalModel(object):
     def __init__(self, model_config, data_collected):
@@ -463,4 +461,4 @@ class FederatedClient(object):
 
 if __name__ == "__main__":
     time_start = time.time()
-    client_instance = FederatedClient(TCP_SERVER_IP, TCP_SERVER_PORT, datasource)
+    FederatedClient(TCP_SERVER_IP, TCP_SERVER_PORT, datasource)

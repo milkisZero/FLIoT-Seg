@@ -4,6 +4,8 @@
       dockerfile: Dockerfile
     env_file:
       - .env
+    environment:
+      - PYTHONUNBUFFERED=1
     container_name: federated_client{NUM}
     networks:
       federated_network:
@@ -13,4 +15,4 @@
       - ./Client/CICIDS_Splitted/client{NUM}_test.csv:/app/CICIDS_Splitted/client_test.csv
       - ./Client/fl_client.py:/app/fl_client.py
     depends_on:
-      - gateway
+      - server

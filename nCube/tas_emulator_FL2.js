@@ -8,15 +8,15 @@ else serverAddress = '192.168.0.10';
 let serverPort = 3105;
 const HEADER_SIZE = 7; // 'WEIGHTS' 또는 'METRICS' 헤더의 크기
 
-if (process.env.CLIENT) host = '192.168.0.60';
-else host = 'server';
+if (process.env.CLIENT) host = 'server';
+else host = '192.168.0.60';
 
 let tas = {
     client: {
         connected: false,
     },
     connection: {
-        host: host,
+        host: 'mqtt',
         port: 1883,
         endpoint: '',
         clean: true,

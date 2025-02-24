@@ -7,3 +7,5 @@ COPY . .
 RUN npm install
 
 CMD ["node", "mobius.js"]
+
+EXPOSE 7579

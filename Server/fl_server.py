@@ -58,11 +58,7 @@ import requests
 import time
 import threading
 
-if os.environ.get('CLIENT') is not None:
-    MOBIUS_URL = "http://server:7579"
-else:
-    MOBIUS_URL = "http://192.168.0.60:7579"
-
+MOBIUS_URL = "http://mobius:7579"
 HEADERS = {
     "X-M2M-Origin": "SOrigin",
     "X-M2M-RI": "12345",
@@ -74,7 +70,7 @@ SUB_CNT_List = ['client1FromC', 'client2FromC']
 # 컨테이너 이름 , 이름/set == 토픽
 PUB_CNT_List = ['client1FromS', 'client2FromS']
 
-HOST = "server"
+HOST = "0.0.0.0"
 PORT = 5011
 
 class GlobalModel(object):#类文档字符串
@@ -202,6 +198,12 @@ class FLServer(object):
         @self.app.route('/stats')
         def status_page():
             return json.dumps(self.global_model.get_stats())        
+        
+        # 아래를 추가하여 healthcheck 엔드포인트를 구성합니다.
+        @self.app.route('/health')
+        def health_check():
+            # 필요한 경우 추가적인 체크 로직을 여기에 넣을 수 있습니다.
+            return jsonify({"status": "ok"}), 200
         
     # Mobius를 구독해서 ae 감지
     def create_aeWatcher(self):

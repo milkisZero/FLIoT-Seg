@@ -28,11 +28,11 @@ conf.sim = 'disable'; // enable or disable
 
 // build cse
 
-if (process.env.CLIENT) host = 'server';
-else host = '192.168.0.60';
+// if (process.env.CLIENT) host = 'server';
+// else host = '192.168.0.60';
 
 cse = {
-    host: host,
+    host: 'mobius',
     port: '7579',
     name: 'Mobius',
     id: '/Mobius2',
@@ -114,7 +114,7 @@ let tas = {
     },
 
     connection: {
-        host: host,
+        host: 'mqtt',
         port: 1883,
         endpoint: '',
         clean: true,

@@ -1,4 +1,4 @@
-version: '3'
+version: '2.1'
 networks:
   federated_network:
     driver: bridge
@@ -9,32 +9,6 @@ networks:
           gateway: ${GATEWAY}
 
 services:
-  server:
-    build:
-      context: ./Server
-      dockerfile: Dockerfile
-    container_name: federated_server
-    env_file:
-      - .env
-    networks:
-      federated_network:
-        ipv4_address: ${DOCKER_NETWORK}2
-    volumes:
-      - ./Server/fl_server.py:/app/fl_server.py
-
-  gateway:
-    build:
-      context: ./nCube
-      dockerfile: Dockerfile
-    env_file:
-      - .env
-    container_name: gateway
-    networks:
-      federated_network:
-        ipv4_address: ${DOCKER_NETWORK}3
-    depends_on:
-      - server
-
   db:
     image: mysql:8.3.0
     command: --default-authentication-plugin=mysql_native_password
@@ -43,7 +17,7 @@ services:
       MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
       MYSQL_ROOT_PASSWORD: "dksdlfduq2"
       MYSQL_DATABASE: "mobiusdb"
-    container_name: federated_db
+    container_name: db
     networks:
       federated_network:
         ipv4_address: ${DOCKER_NETWORK}4
@@ -68,14 +42,50 @@ services:
       federated_network:
         ipv4_address: ${DOCKER_NETWORK}5
     depends_on:
-      db: 
+      db:
         condition: service_healthy  # db가 healthy 상태가 될 때까지 대기
+    healthcheck:
+      test: ["CMD", "node", "-e", "var http=require('http'); http.get({hostname:'localhost', port:7579, path:'/'}, function(res){process.exit(0)}).on('error',function(){process.exit(1)})"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  server:
+    build:
+      context: ./Server
+      dockerfile: Dockerfile
+    container_name: server
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      federated_network:
+        ipv4_address: ${DOCKER_NETWORK}2
+    volumes:
+      - ./Server/fl_server.py:/app/fl_server.py
+    depends_on:
+      mobius:
+        condition: service_healthy
+
+  gateway:
+    build:
+      context: ./nCube
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    container_name: gateway
+    networks:
+      federated_network:
+        ipv4_address: ${DOCKER_NETWORK}3
+    depends_on:
+      - server
 
   mqtt:
     image: eclipse-mosquitto:1.6
     ports:
       - "1883:1883"
-    container_name: federated_mqtt
+    container_name: mqtt
     networks:
       federated_network:
         ipv4_address: ${DOCKER_NETWORK}6
@@ -83,4 +93,4 @@ services:
       - ./Mosquitto/etc/mosquitto:/etc/mosquitto:ro
       - ./Mosquitto/var/log/mosquitto:/var/log/mosquitto:rw
     depends_on:
-      - db
+      - server
