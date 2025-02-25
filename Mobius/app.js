@@ -1403,7 +1403,8 @@ function check_xm2m_headers(request, callback) {
             callback('400-1');
             return;
         }
-        else if (request.headers['x-m2m-ri'] in ['healthcheck']) {
+        else if (typeof request.headers['x-m2m-ri'] === 'string' &&
+                 request.headers['x-m2m-ri'].toLowerCase().includes('healthcheck')) {
             callback('200');
             return;
         }

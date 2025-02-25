@@ -122,7 +122,7 @@ function setup_resources(_status) {
 
     if (_status === 'crtae') {
         onem2m_client.create_ae(conf.ae.parent, conf.ae.name, conf.ae.appid, function (status, res_body) {
-            console.log(res_body);
+            // console.log(res_body);
             if (status == 2001) {
                 ae_response_action(status, res_body, function (status, aeid) {
                     console.log('x-m2m-rsc : ' + status + ' - ' + aeid + ' <----');
@@ -214,7 +214,7 @@ function setup_resources(_status) {
 
 onem2m_client.on('notification', function (source_uri, cinObj) {
 
-    console.log(source_uri, cinObj);
+    // console.log(source_uri, cinObj);
 
     var path_arr = source_uri.split('/')
     var event_cnt_name = path_arr[path_arr.length-2];

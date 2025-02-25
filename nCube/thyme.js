@@ -19,7 +19,7 @@ global.socket_q = {};
 
 const { conf } = require('./conf.js');
 global.conf = conf;
-console.log(conf);
+// console.log(conf);
 
 //fs.writeFileSync('aei.json', JSON.stringify(conf, null, 4), 'utf-8');
 

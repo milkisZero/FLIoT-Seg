@@ -44,7 +44,7 @@ let createConnection = () => {
             conf.tas.client.on('message', (topic, message) => {
                 let content = null;
                 let parent = null;
-                console.log(topic);
+                // console.log(topic);
                 const key = Object.keys(getDataTopic).find((key) => getDataTopic[key] === topic);
 
                 if (topic === getDataTopic.fromTas) {
@@ -151,8 +151,8 @@ exports.ready_for_tas = function ready_for_tas() {
 };
 
 exports.send_to_tas = function send_to_tas(topicName, message) {
-    console.log(message);
-    console.log(message.toString());
+    // console.log(message);
+    // console.log(message.toString());
     if (setDataTopic.hasOwnProperty(topicName)) {
         conf.tas.client.publish(setDataTopic[topicName], JSON.stringify(message));
     }
