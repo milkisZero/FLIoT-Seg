@@ -51,7 +51,7 @@ var events = require('events');
 var mqtt_app = express();
 
 
-var usemqttcbhost = 'localhost'; // pxymqtt to mobius
+var usemqttcbhost = 'mobius'; // pxymqtt to mobius
 
 
 
@@ -71,7 +71,8 @@ exports.mqtt_watchdog = function() {
         if(use_secure === 'disable') {
             http.globalAgent.maxSockets = 1000000;
             http.createServer(mqtt_app).listen({port: usepxymqttport, agent: false}, function () {
-                NOPRINT==='true'?NOPRINT='true':console.log('pxymqtt server (' + ip.address() + ') running at ' + usepxymqttport + ' port');
+                // NOPRINT==='true'?NOPRINT='true':console.log('pxymqtt server (' + ip.address() + ') running at ' + usepxymqttport + ' port');
+                console.log('pxymqtt server (' + ip.address() + ') running at ' + usepxymqttport + ' port');
 
                 mqtt_state = 'connect';
             });

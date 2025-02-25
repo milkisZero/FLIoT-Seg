@@ -37,15 +37,17 @@ services:
       dockerfile: Dockerfile
     env_file:
       - .env
+    environment:
+      - NODE_ENV=production
     container_name: mobius
     networks:
       federated_network:
         ipv4_address: 172.20.0.5
     depends_on:
       db:
-        condition: service_healthy  # db가 healthy 상태가 될 때까지 대기
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "node", "-e", "var http=require('http'); http.get({hostname:'localhost', port:7579, path:'/'}, function(res){process.exit(0)}).on('error',function(){process.exit(1)})"]
+      test: ["CMD", "node", "-e", "var http=require('http'); http.get({hostname:'localhost', port:7579, path:'/', headers:{'healthcheck':'true'}}, function(res){process.exit(0)}).on('error', function(){process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -67,6 +69,12 @@ services:
     depends_on:
       mobius:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://server:5011/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   gateway:
     build:
@@ -79,21 +87,9 @@ services:
       federated_network:
         ipv4_address: 172.20.0.3
     depends_on:
-      - server
+      server:
+        condition: service_healthy
 
-  mqtt:
-    image: eclipse-mosquitto:1.6
-    ports:
-      - "1883:1883"
-    container_name: mqtt
-    networks:
-      federated_network:
-        ipv4_address: 172.20.0.6
-    volumes:
-      - ./Mosquitto/etc/mosquitto:/etc/mosquitto:ro
-      - ./Mosquitto/var/log/mosquitto:/var/log/mosquitto:rw
-    depends_on:
-      - server
   client1:
     build:
       context: ./Client
@@ -111,7 +107,8 @@ services:
       - ./Client/CICIDS_Splitted/client1_test.csv:/app/CICIDS_Splitted/client_test.csv
       - ./Client/fl_client.py:/app/fl_client.py
     depends_on:
-      - server
+      server:
+        condition: service_healthy
   client2:
     build:
       context: ./Client
@@ -129,4 +126,5 @@ services:
       - ./Client/CICIDS_Splitted/client2_test.csv:/app/CICIDS_Splitted/client_test.csv
       - ./Client/fl_client.py:/app/fl_client.py
     depends_on:
-      - server
+      server:
+        condition: service_healthy

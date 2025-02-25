@@ -105,5 +105,3 @@ exports.getResult = function(query, connection, callback) {
         }
     });
 };
-
-

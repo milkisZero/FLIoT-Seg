@@ -221,7 +221,7 @@ onem2m_client.on('notification', function (source_uri, cinObj) {
     var content = cinObj.con;
 
     /* ***** USER CODE ***** */
-    if(event_cnt_name === 'led') {
+    if(event_cnt_name) {
         // send to tas
         thyme_tas.send_to_tas(event_cnt_name, content);
     }

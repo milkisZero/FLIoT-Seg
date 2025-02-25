@@ -4,6 +4,8 @@ WORKDIR /app
 
 COPY . .
 
+RUN npm install -g pm2
+
 RUN npm install
 
 RUN chmod +x start.sh

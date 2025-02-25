@@ -27,10 +27,6 @@ conf.useprotocol = 'mqtt'; // select one for 'http' or 'mqtt' or 'coap' or 'ws'
 conf.sim = 'disable'; // enable or disable
 
 // build cse
-
-// if (process.env.CLIENT) host = 'server';
-// else host = '192.168.0.60';
-
 cse = {
     host: 'mobius',
     port: '7579',
@@ -41,7 +37,7 @@ cse = {
 };
 
 // build ae
-let ae_name = 'KETI3_DEMO';
+let ae_name = 'FLIoT';
 
 ae = {
     name: ae_name,
@@ -68,41 +64,41 @@ cnt_arr = [
         parent: '/' + cse.name + '/' + ae.name,
         name: 'metrics1',
     },
-    {
-        parent: '/' + cse.name + '/' + ae.name,
-        name: 'metrics2',
-    },
+    // {
+    //     parent: '/' + cse.name + '/' + ae.name,
+    //     name: 'metrics2',
+    // },
     {
         parent: '/' + cse.name + '/' + ae.name,
         name: 'results1',
     },
-    {
-        parent: '/' + cse.name + '/' + ae.name,
-        name: 'results2',
-    },
+    // {
+    //     parent: '/' + cse.name + '/' + ae.name,
+    //     name: 'results2',
+    // },
     {
         parent: '/' + cse.name + '/' + ae.name,
         name: 'client1FromC',
     },
-    {
-        parent: '/' + cse.name + '/' + ae.name,
-        name: 'client2FromC',
-    },
+    // {
+    //     parent: '/' + cse.name + '/' + ae.name,
+    //     name: 'client2FromC',
+    // },
     {
         parent: '/' + cse.name + '/' + ae.name,
         name: 'client1FromS',
     },
-    {
-        parent: '/' + cse.name + '/' + ae.name,
-        name: 'client2FromS',
-    },
+    // {
+    //     parent: '/' + cse.name + '/' + ae.name,
+    //     name: 'client2FromS',
+    // },
 ];
 
 // build sub
 sub_arr = [
     {
-        parent: cnt_arr[0].parent + '/' + cnt_arr[0].name,
-        name: 'sub1',
+        parent: '/' + cse.name + '/' + ae.name + '/' + 'client1FromS',
+        name: 'client1FromS',
         nu: 'mqtt://' + cse.host + ':' + cse.mqttport + '/' + ae.id + '?ct=json', // 'http:/' + ip.address() + ':' + ae.port + '/noti?ct=json',
     },
 ];
@@ -114,7 +110,7 @@ let tas = {
     },
 
     connection: {
-        host: 'mqtt',
+        host: 'mobius',
         port: 1883,
         endpoint: '',
         clean: true,
@@ -144,4 +140,46 @@ conf.sub = sub_arr;
 conf.acp = acp;
 conf.tas = tas;
 
-module.exports = conf;
+let getDataTopic = {
+    weights1: '/thyme/weights1',
+    weights2: '/thyme/weights2',
+    fromTas: '/thyme/fromTas',
+    client1FromC: '/thyme/client1',
+    metrics1: '/thyme/metrics1',
+    results1: '/thyme/results1',
+};
+
+let setDataTopic = {
+    led: '/led/set',
+    client1FromS: '/client1FromS/set',
+};
+
+let makeConnection = (clientCount) => {
+    const clientId = `client${clientCount}`;
+    getDataTopic[clientId + 'FromC'] = '/thyme/' + clientId;
+    getDataTopic['metrics' + clientCount] = '/thyme/metrics' + clientCount;
+    getDataTopic['results' + clientCount] = '/thyme/results' + clientCount;
+
+    setDataTopic[clientId + 'FromS'] = '/' + clientId + 'FromS/set';
+
+    // conf.cnt.push(
+    //     {
+    //         parent: '/' + cse.name + '/' + ae.name,
+    //         name: 'metrics' + clientCount,
+    //     },
+    //     {
+    //         parent: '/' + cse.name + '/' + ae.name,
+    //         name: 'results' + clientCount,
+    //     },
+    //     {
+    //         parent: '/' + cse.name + '/' + ae.name,
+    //         name: clientId + 'FromS',
+    //     },
+    //     {
+    //         parent: '/' + cse.name + '/' + ae.name,
+    //         name: clientId + 'FromC',
+    //     }
+    // );
+};
+
+module.exports = { conf, getDataTopic, setDataTopic, makeConnection };

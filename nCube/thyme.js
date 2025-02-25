@@ -17,7 +17,9 @@ global.resp_mqtt_ri_arr = [];
 global.resp_mqtt_path_arr = {};
 global.socket_q = {};
 
-global.conf = require('./conf.js');
+const { conf } = require('./conf.js');
+global.conf = conf;
+console.log(conf);
 
 //fs.writeFileSync('aei.json', JSON.stringify(conf, null, 4), 'utf-8');
 

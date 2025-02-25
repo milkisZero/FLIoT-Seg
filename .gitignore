@@ -5,3 +5,4 @@ __pycache__/
 .env
 CICIDS_Splitted/
 CICIDS
+node_modules/

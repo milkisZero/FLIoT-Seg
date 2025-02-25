@@ -8,6 +8,7 @@ gfortran \
 libopenblas-dev \
 liblapack-dev \
 pkg-config \
+curl \
 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

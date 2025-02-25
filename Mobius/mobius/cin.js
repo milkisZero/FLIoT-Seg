@@ -27,57 +27,43 @@ var responder = require('./responder');
 exports.build_cin = function(request, response, resource_Obj, body_Obj, callback) {
     var rootnm = request.headers.rootnm;
 
-    // body
-    if(body_Obj[rootnm].con.hasOwnProperty('$')) {
-        resource_Obj[rootnm].con = body_Obj[rootnm].con['_'];
-    }
-    else {
+    // BLOB 데이터 처리
+    if (request.headers['content-type'] === 'application/octet-stream') {
         resource_Obj[rootnm].con = body_Obj[rootnm].con;
-    }
-    /*if (Array.isArray(body_Obj[rootnm].con)) {
-        return 'array';
-    }
-    else if (typeof body_Obj[rootnm].con == 'string') {
-        return 'string';
-    }
-    else if (body_Obj[rootnm].con != null && typeof body_Obj[rootnm].con == 'object') {
-        if(body_Obj[rootnm].con['$'] != null) {
-
+        resource_Obj[rootnm].cs = body_Obj[rootnm].con.length.toString();
+        resource_Obj[rootnm].cnf = 'application/octet-stream';
+    } 
+    else {
+        // 기존 텍스트 데이터 처리
+        if(body_Obj[rootnm].con.hasOwnProperty('$')) {
+            resource_Obj[rootnm].con = body_Obj[rootnm].con['_'];
         }
         else {
             resource_Obj[rootnm].con = body_Obj[rootnm].con;
         }
-    }
-    else {
-        return 'other';
-    }*/
 
-    var con_type = getType(resource_Obj[rootnm].con);
-    if(con_type == 'string') {
-        resource_Obj[rootnm].cs = Buffer.byteLength(resource_Obj[rootnm].con, 'utf8').toString();
-
-        if(request.headers.hasOwnProperty('mbs')) {
-            if(parseInt(request.headers.mbs) < parseInt(resource_Obj[rootnm].cs)) {
-                callback('406-3');
-                return;
-            }
+        var con_type = getType(resource_Obj[rootnm].con);
+        if(con_type == 'string') {
+            resource_Obj[rootnm].cs = Buffer.byteLength(resource_Obj[rootnm].con, 'utf8').toString();
         }
-    }
-    else {
-        if (con_type === 'string_object') {
-            try {
-                resource_Obj[rootnm].con = JSON.parse(resource_Obj[rootnm].con);
+        else {
+            if (con_type === 'string_object') {
+                try {
+                    resource_Obj[rootnm].con = JSON.parse(resource_Obj[rootnm].con);
+                }
+                catch (e) {
+                }
             }
-            catch (e) {
-            }
+            resource_Obj[rootnm].cs = Buffer.byteLength(JSON.stringify(resource_Obj[rootnm].con), 'utf8').toString();
         }
-        resource_Obj[rootnm].cs = Buffer.byteLength(JSON.stringify(resource_Obj[rootnm].con), 'utf8').toString();
+
+        resource_Obj[rootnm].cnf = (body_Obj[rootnm].cnf) ? body_Obj[rootnm].cnf : '';
     }
 
-    resource_Obj[rootnm].cnf = (body_Obj[rootnm].cnf) ? body_Obj[rootnm].cnf : '';
-    if(resource_Obj[rootnm].cnf != '') {
-        if (resource_Obj[rootnm].cnf.split(':')[0] == '') {
-            callback('400-32');
+    // mbs 체크
+    if(request.headers.hasOwnProperty('mbs')) {
+        if(parseInt(request.headers.mbs) < parseInt(resource_Obj[rootnm].cs)) {
+            callback('406-3');
             return;
         }
     }
@@ -90,3 +76,4 @@ exports.build_cin = function(request, response, resource_Obj, body_Obj, callback
 
     callback('200');
 };
+

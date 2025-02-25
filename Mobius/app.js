@@ -1403,6 +1403,10 @@ function check_xm2m_headers(request, callback) {
             callback('400-1');
             return;
         }
+        else if (request.headers['x-m2m-ri'] in ['healthcheck']) {
+            callback('200');
+            return;
+        }
     }
     else {
         callback('400-1');
@@ -1790,7 +1794,7 @@ app.use((req, res, next) => {
 // }));
 
 // remoteCSE, ae, cnt
-app.post('*', onem2mParser, (request, response) => {
+app.post(onem2mParser, (request, response) => {
     var fullBody = '';
     request.on('data', (chunk) => {
         fullBody += chunk.toString();
@@ -2078,7 +2082,7 @@ app.post('*', onem2mParser, (request, response) => {
     });
 });
 
-app.get('*', onem2mParser, (request, response) => {
+app.get(onem2mParser, (request, response) => {
     var fullBody = '';
     request.on('data', (chunk) => {
         fullBody += chunk.toString();
@@ -2260,7 +2264,7 @@ app.get('*', onem2mParser, (request, response) => {
 });
 
 
-app.put('*', onem2mParser, (request, response) => {
+app.put(onem2mParser, (request, response) => {
     var fullBody = '';
     request.on('data', (chunk) => {
         fullBody += chunk.toString();
@@ -2474,7 +2478,7 @@ app.put('*', onem2mParser, (request, response) => {
     });
 });
 
-app.delete('*', onem2mParser, (request, response) => {
+app.delete(onem2mParser, (request, response) => {
     var fullBody = '';
     request.on('data', (chunk) => {
         fullBody += chunk.toString();

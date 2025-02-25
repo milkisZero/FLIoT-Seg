@@ -15,4 +15,5 @@
       - ./Client/CICIDS_Splitted/client{NUM}_test.csv:/app/CICIDS_Splitted/client_test.csv
       - ./Client/fl_client.py:/app/fl_client.py
     depends_on:
-      - server
+      server:
+        condition: service_healthy
