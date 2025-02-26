@@ -65,10 +65,10 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
-SUB_CNT_List = ['client1FromC', 'client2FromC']
+SUB_CNT_List = []
 
 # 컨테이너 이름 , 이름/set == 토픽
-PUB_CNT_List = ['client1FromS', 'client2FromS']
+PUB_CNT_List = []
 
 HOST = "server"
 PORT = 5011
@@ -269,7 +269,8 @@ class FLServer(object):
             print(f"Error creating aeSub: {e}")
 
     # 컨테이너 구독
-    def create_cntSub(self,path):
+    def create_cntSub(self,path,content):
+        SUB_CNT_List.append(content)
         # Mobius 서버 및 리소스 경로 설정
     
         # 구독 요청 데이터
@@ -301,59 +302,6 @@ class FLServer(object):
         except Exception as e:
             print(f"Error creating cntSub: {e}")
 
-    def create_cntPub(self):
-        # pub 컨테이너 이름 == conf의 sub, 키 이름
-        for e in PUB_CNT_List:
-            payload = {
-                "m2m:cnt": {
-                    "rn": e,   
-                }
-            }
-                    
-            url = MOBIUS_URL + '/Mobius/FLIoT'
-            headers = HEADERS
-            headers["Content-Type"] = "application/json; ty=3"
-
-            try:
-                response = requests.post(url, headers=headers, json=payload)
-
-                if response.status_code == 201:
-                    print("cntPub created successfully!")
-                else:
-                    print(f"Failed to create cntPub: {response.status_code}, {response.text}")
-
-            except Exception as e:
-                print(f"Error creating cntPub: {e}")
-                return
-        
-        
-            # payload = {
-            #     "m2m:sub": {
-            #         "rn": "FLserverSub",  # 구독 이름
-            #         "nu": [f"mqtt://192.168.0.60:1883/SFLIoT/{e}/set?ct=json"],  # 알림을 받을 서버 URL
-            #         "nct": 2,  # 알림 내용 형식 (전체 콘텐츠)
-            #         "enc": {
-            #             "net": [1,2,3,4]  # 이벤트 조건: 데이터 생성
-            #         },
-            #         "exc": 100  # 최대 알림 횟수
-            #     }
-            # }
-            
-            # url = MOBIUS_URL + '/Mobius/FLIoT/' + e
-            # headers = HEADERS
-            # headers["Content-Type"] = "application/json; ty=23"
-
-            # try:
-            #     response = requests.post(url, headers=headers, json=payload)
-
-            #     if response.status_code == 201:
-            #         print("sub created successfully!")
-            #     else:
-            #         print(f"Failed to create sub: {response.status_code}, {response.text}")
-
-            # except Exception as e:
-            #     print(f"Error creating sub: {e}")
-
     def publish(self, path, data):
         payload = {
             "m2m:cin": {
@@ -369,7 +317,7 @@ class FLServer(object):
             response = requests.post(url, headers=headers, json=payload)
 
             if response.status_code == 201:
-                print("Publish successfully!")
+                print("Publish successfully!", url)
             else:
                 print(f"Failed to Publish: {response.status_code}, {response.text}")
 
@@ -387,7 +335,6 @@ class FLServer(object):
                 content = data["m2m:sgn"]["nev"]["rep"]["m2m:ae"]["rn"]
                 print(f"New AE detected(rn): {content}")
                 self.create_aeSub(content)
-                self.create_cntPub()
                 
             return jsonify({"status": "received"}), 200
 
@@ -408,8 +355,10 @@ class FLServer(object):
                 url = data["m2m:sgn"]['sur']
                 url = url[:url.rfind('/')+1]
                 
-                if content in SUB_CNT_List:
-                    self.create_cntSub(url + content)
+                if content[len(content)-1] == 'S':
+                    PUB_CNT_List.append(content)
+                elif content[len(content)-1] == 'C':
+                    self.create_cntSub(url + content, content)
                 
             return jsonify({"status": "received"}), 200
 
@@ -666,7 +615,7 @@ class FLServer(object):
     def stop_and_eval(self):
         #self.global_model.save("global_model.h5")
         self.eval_client_updates = []
-        self.stop_training = True  # 종료 플래그 설정
+        # self.stop_training = True  # 종료 플래그 설정
         for rid in self.ready_client_sids:
             data = {
                 'event': 'stop_and_eval',

@@ -51,11 +51,10 @@ let createConnection = () => {
                     clientCount = JSON.parse(message.toString()) + 1;
                     makeConnection(clientCount);
                     const clientId = `client${clientCount}`;
-                    create_cnt_mqtt_sub(clientId + 'FromC', '/thyme/' + clientId);
-                    create_cnt_mqtt_sub('metrics' + clientCount, '/thyme/metrics' + clientCount);
-                    create_cnt_mqtt_sub('results' + clientCount, '/thyme/results' + clientCount);
-                    create_cnt_mqtt_sub(clientId + 'FromS', '/' + clientId + 'FromS/set');
-                    sub_for_mobius(clientId + 'FromS');
+                    push_cnt_arr(clientId + 'FromC', '/thyme/' + clientId, 1);
+                    push_cnt_arr('metrics' + clientCount, '/thyme/metrics' + clientCount, 1);
+                    push_cnt_arr('results' + clientCount, '/thyme/results' + clientCount, 1);
+                    push_cnt_arr(clientId + 'FromS', '/' + clientId + 'FromS/set', 0);
                 } else if (key) {
                     try {
                         parent = conf.cnt[1].parent + '/' + key;
@@ -158,10 +157,9 @@ exports.send_to_tas = function send_to_tas(topicName, message) {
     }
 };
 
-let create_cnt_mqtt_sub = (key, value) => {
+let push_cnt_arr = (key, value, tag) => {
     if (conf.cnt.some((item) => item.name === key)) return;
 
-    doSubscribe(value);
     conf.cnt.push({
         parent: '/' + conf.cse.name + '/' + conf.ae.name,
         name: key,
@@ -172,7 +170,10 @@ let create_cnt_mqtt_sub = (key, value) => {
     var rn = conf.cnt[count].name;
     onem2m_client.create_cnt(parent, rn, count, (rsc, res_body, count) => {
         console.log('created container: ', rn);
+        if (tag) doSubscribe(value);
+        else sub_for_mobius(key);
     });
+
 };
 
 let sub_for_mobius = (value) => {
