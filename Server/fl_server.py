@@ -574,7 +574,7 @@ class FLServer(object):
                     # else:
                     #     self.train_next_round()
                     
-                    if self.current_round % FLServer.MAx_NUM_ROUNDS == 0 and self.current_round > 0 :
+                    if self.current_round == FLServer.MAx_NUM_ROUNDS:
                         print("Maximum rounds reached. Triggering evaluation.")
                         self.stop_and_eval()
                     else:
@@ -599,8 +599,8 @@ class FLServer(object):
                 # Otherwise, training is complete. Print total training time cost.
                 total_training_time = time.time() - self.global_model.training_start_time
                 print('Total training time cost:', total_training_time)
-            # self.eval_client_updates = None  # Prevent further evaluation
-            if len(self.eval_client_updates) == FLServer.NUM_CLIENTS_CONTACTED_PER_ROUND:
+            # 종료 플래그 확인
+            if not getattr(self, 'stop_training', False) and len(self.eval_client_updates) == FLServer.NUM_CLIENTS_CONTACTED_PER_ROUND:
                 self.train_next_round()
 
     # Note: we assume that during training thlen(e #workers will be >= MI)N_NUM_WORKERS
@@ -666,6 +666,7 @@ class FLServer(object):
     def stop_and_eval(self):
         #self.global_model.save("global_model.h5")
         self.eval_client_updates = []
+        self.stop_training = True  # 종료 플래그 설정
         for rid in self.ready_client_sids:
             data = {
                 'event': 'stop_and_eval',

@@ -249,6 +249,8 @@ class FederatedClient(object):
                 self.on_eval(message['payload'])
             elif event == 'global_update':
                 self.on_global_update(message['payload'])
+            elif event == 'classify_packet':
+                self.on_classify_packet(message['payload'])
             else:
                 print("Unknown event:", event)
         else:
@@ -458,6 +460,52 @@ class FederatedClient(object):
     def intermittently_sleep(self, p=.1, low=10, high=100):
         if (random.random() < p):
             time.sleep(random.randint(low, high))
+
+    def on_classify_packet(self, payload):
+        """
+        이 메서드는 수신된 패킷 정보를 이용해 학습된 모델로 예측을 진행하고,
+        예측한 라벨과 실제 라벨(true_label)이 일치하는지 판별합니다.
+        
+        payload 예시:
+        {
+            "packet": [0.1, 0.5, ...],   # 패킷 정보 (특징 데이터 리스트)
+            "true_label": 0              # 실제 라벨 (0: 정상, 1: 이상)
+        }
+        """
+        if self.local_model is None:
+            print("로컬 모델이 초기화되지 않았습니다. 먼저 모델을 초기화해주세요.")
+            return
+        try:
+            # 수신된 데이터 확인
+            packet = payload.get("packet")
+            true_label = payload.get("true_label")
+            
+            print("[on_classify_packet] 수신된 패킷:", packet)
+            print("[on_classify_packet] 수신된 실제 라벨:", true_label)
+            
+            # 패킷 데이터를 numpy 배열로 변환 (모델 입력 크기에 맞게 reshape)
+            packet_array = np.array(packet)
+            if packet_array.ndim == 1:
+                packet_array = np.expand_dims(packet_array, axis=0)
+            
+            # 모델 예측(재구성) 수행
+            prediction = self.local_model.model.predict(packet_array, verbose=0)
+            
+            # 재구성 오차 (Mean Squared Error) 계산
+            error = np.mean(np.square(packet_array - prediction))
+            print("패킷 재구성 오차:", error)
+            
+            # 학습 데이터에 대해 모델 예측을 수행하여 임계치(threshold) 계산 
+            # (재구성 오차 백분위수를 이용 – 여기서는 99번째 백분위수 사용)
+            train_preds = self.local_model.model.predict(self.local_model.x_train, batch_size=16, verbose=0)
+            train_losses = np.mean(np.square(self.local_model.x_train - train_preds), axis=1)
+            threshold = np.percentile(train_losses, 99)
+            print("Computed threshold:", threshold)
+            
+            result = "anomaly" if error > threshold else "normal"
+            print(f"예측 결과: {result} (오차: {error})")
+        except Exception as e:
+            print("분류 중 오류 발생:", e)
 
 if __name__ == "__main__":
     time_start = time.time()
