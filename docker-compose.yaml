@@ -106,6 +106,8 @@ services:
       - ./Client/CICIDS_Splitted/client1_train.csv:/app/CICIDS_Splitted/client_train.csv
       - ./Client/CICIDS_Splitted/client1_test.csv:/app/CICIDS_Splitted/client_test.csv
       - ./Client/fl_client.py:/app/fl_client.py
+    ports:
+      - 4001:4000
     depends_on:
       server:
         condition: service_healthy
@@ -125,6 +127,8 @@ services:
       - ./Client/CICIDS_Splitted/client2_train.csv:/app/CICIDS_Splitted/client_train.csv
       - ./Client/CICIDS_Splitted/client2_test.csv:/app/CICIDS_Splitted/client_test.csv
       - ./Client/fl_client.py:/app/fl_client.py
+    ports:
+      - 4002:4000
     depends_on:
       server:
         condition: service_healthy

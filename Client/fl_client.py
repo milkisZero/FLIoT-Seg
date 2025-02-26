@@ -148,6 +148,7 @@ class FederatedClient(object):
     def __init__(self, server_host, server_port, datasource):
         self.local_model = None
         self.datasource = datasource
+        self.stop_training = False
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             self.tcp_socket.connect((server_host, server_port))
@@ -169,6 +170,12 @@ class FederatedClient(object):
         self.testing_thread = threading.Thread(target=self.continuous_testing, daemon=True)
         self.testing_thread.start()
 
+        # 공격자 클라이언트의 연결을 받을 소켓 설정 (예: 포트 4000 사용)
+        self.setup_attacker_listener(attacker_port=4000)
+        self.attacker_thread = threading.Thread(target=self.receive_attacker_messages, daemon=True)
+        self.attacker_thread.start()
+
+        # 기존 TCP 메시지 수신 쓰레드 시작
         print("sent wakeup")
         message = json.dumps({
             'event': 'client_wake_up'
@@ -185,8 +192,52 @@ class FederatedClient(object):
             except RuntimeError as e:
                 print("GPU 메모리 증분 할당 설정 중 오류 발생:", e)
 
-    def continuous_testing(self):
+    def setup_attacker_listener(self, attacker_port):
+        """공격자 클라이언트의 연결을 수신하기 위한 서버 소켓을 설정합니다."""
+        self.attacker_listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.attacker_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.attacker_listener.bind(('', attacker_port))
+        self.attacker_listener.listen(5)
+        print(f"공격자 패킷 수신을 위한 포트({attacker_port})에서 대기 중입니다.")
+
+    def receive_attacker_messages(self):
+        """공격자(attacker) 클라이언트의 메시지를 수신 및 처리합니다.
+        수신된 메시지는 'classify_packet' 이벤트로 처리되어,
+        on_classify_packet 함수를 호출합니다.
+        """
         while True:
+            try:
+                attacker_conn, attacker_addr = self.attacker_listener.accept()
+                print("공격자 클라이언트 연결됨:", attacker_addr)
+                while True:
+                    # 먼저 4바이트 크기의 메시지 길이를 수신
+                    message_length_bytes = self.recv_exactly_from(attacker_conn, 4)
+                    message_length = int.from_bytes(message_length_bytes, byteorder='big')
+                    print("공격자 메시지 예상 길이:", message_length)
+                    
+                    # 지정된 길이만큼의 데이터를 읽어들임
+                    json_message = self.recv_exactly_from(attacker_conn, message_length)
+                    message_data = json.loads(json_message)
+                    print("공격자 메시지 데이터:", message_data)
+                    
+                    # 공격자 클라이언트의 메시지 처리 로직을 여기에 구현합니다.
+                    self.receive_tcp_messages(message_data)
+            except Exception as e:
+                print("공격자 메시지 수신 중 오류:", e)
+                break
+
+    def recv_exactly_from(self, conn, size):
+        """특정 연결(conn)에서 정확히 size 바이트만큼 데이터 수신"""
+        data = b""
+        while len(data) < size:
+            chunk = conn.recv(size - len(data))
+            if not chunk:
+                raise ConnectionError("연결이 끊어졌습니다.")
+            data += chunk
+        return data
+
+    def continuous_testing(self):
+        while not self.stop_training:
             time.sleep(self.test_interval)
             # Check that the local model exists and its evaluation method is callable
             if self.local_model is not None and hasattr(self.local_model, 'evaluate1') and callable(self.local_model.evaluate1):
@@ -246,7 +297,7 @@ class FederatedClient(object):
             elif event == 'request_update':
                 self.on_request_update(message['payload'])
             elif event == 'stop_and_eval' or event == 'request_eval':
-                self.on_eval(message['payload'])
+                self.on_eval(message['payload'], event)
             elif event == 'global_update':
                 self.on_global_update(message['payload'])
             elif event == 'classify_packet':
@@ -393,6 +444,9 @@ class FederatedClient(object):
 
     def on_eval(self, *args):
         req = args[0]
+        event = args[1]
+        if(event == 'stop_and_eval'):
+            self.stop_training = True
         if req['weights_format'] == 'pickle':
             weights = pickle_string_to_obj(req['current_weights'])
         with self.eval_lock:

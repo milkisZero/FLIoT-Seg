@@ -60,9 +60,9 @@ for (( i = 1; i <= CLIENT; i++ )); do
   # Client IP 계산: 기본 IP 접두사 + (100 + i)
   IP_SUFFIX=$((100 + i))
   CLIENT_IP="${DOCKER_NETWORK}${IP_SUFFIX}"
-
-  echo "Client${i} 설정 (IP: ${CLIENT_IP}) 추가 중..."
-  sed -e "s/{NUM}/$i/g" -e "s/{IP}/$CLIENT_IP/g" "$TEMPLATE_FILE" >> "$COMPOSE_FILE"
+  PORT=$((4000 + i))
+  echo "Client${i} 설정 (IP: ${CLIENT_IP}, PORT: ${PORT}) 추가 중..."
+  sed -e "s/{NUM}/$i/g" -e "s/{IP}/$CLIENT_IP/g" -e "s/{PORT}/$PORT/g" "$TEMPLATE_FILE" >> "$COMPOSE_FILE"
 done
 
 # 현재 스크립트 위치 기준으로 Client 폴더로 이동

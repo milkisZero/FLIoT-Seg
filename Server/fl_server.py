@@ -548,9 +548,8 @@ class FLServer(object):
                 # Otherwise, training is complete. Print total training time cost.
                 total_training_time = time.time() - self.global_model.training_start_time
                 print('Total training time cost:', total_training_time)
-            # 종료 플래그 확인
-            if not getattr(self, 'stop_training', False) and len(self.eval_client_updates) == FLServer.NUM_CLIENTS_CONTACTED_PER_ROUND:
-                self.train_next_round()
+      
+            self.eval_client_updates = None  # Prevent further evaluation
 
     # Note: we assume that during training thlen(e #workers will be >= MI)N_NUM_WORKERS
     def train_next_round(self):

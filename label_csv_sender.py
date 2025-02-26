@@ -32,7 +32,9 @@ def main():
         print(f"{i}: {label} ({count}개)")
     
     # 4. 다중 인덱스 선택 (콤마(,)로 구분) - 아무것도 입력하면 전체 라벨 선택
-    selected_indexes_input = input("\n추출할 라벨의 인덱스를 콤마(,)로 구분하여 선택하세요 (아무것도 입력하면 전체 라벨 선택): ").strip()
+    selected_indexes_input = input(
+        "\n추출할 라벨의 인덱스를 콤마(,)로 구분하여 선택하세요 (아무것도 입력하면 전체 라벨 선택): "
+    ).strip()
     if not selected_indexes_input:
         selected_indexes = list(range(len(labels)))
     else:
@@ -74,70 +76,98 @@ def main():
         print(f"CSV 파일 저장 중 오류가 발생했습니다: {e}")
         return
 
-    # 7. 파일 전송을 위한 대상 IP와 포트 입력
-    target_ip = input("전송할 대상 IP 주소를 입력하세요: ").strip()
-    try:
-        target_port = int(input("전송할 대상 포트 번호를 입력하세요: "))
-    except ValueError:
-        print("올바른 포트 번호가 입력되지 않았습니다.")
-        return
+    # 7. 전송할 대상 정보 입력 (localhost 여부 먼저 확인)
+    target_destinations = []  # (ip, port) 튜플의 리스트
+    use_localhost = input("전송할 대상이 localhost 입니까? (y/n): ").strip().lower()
+    if use_localhost == 'y':
+        try:
+            num_clients = int(input("로컬호스트 대상 클라이언트 수를 입력하세요: ").strip())
+        except ValueError:
+            print("올바른 클라이언트 수가 입력되지 않았습니다.")
+            return
+        # 클라이언트 수만큼 포트를 4000+클라이언트 번호로 할당
+        for client_idx in range(1, num_clients+1):
+            port = 4000 + client_idx
+            target_destinations.append(("localhost", port))
+    else:
+        try:
+            num_destinations = int(input("전송할 대상 IP의 개수를 입력하세요: ").strip())
+        except ValueError:
+            print("올바른 숫자가 입력되지 않았습니다.")
+            return
+        for i in range(num_destinations):
+            ip = input(f"\n대상 {i+1}의 IP 주소를 입력하세요: ").strip()
+            if ip == "":
+                print("IP 주소가 입력되지 않았습니다.")
+                return
+            try:
+                port = int(input(f"대상 {ip}의 포트 번호를 입력하세요: ").strip())
+            except ValueError:
+                print("올바른 포트 번호가 입력되지 않았습니다.")
+                return
+            target_destinations.append((ip, port))
 
-    # 8. TCP 소켓을 이용해 CSV 파일의 각 행을 한 줄씩 전송 (JSON 메시지 형식)
-    # 전송 메시지 포맷은 항상 header에 "OPERATE"이고,
-    # message 내부는 { "event": "classify_packet", "payload": { ... } } 형태입니다.
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        print(f"\n{target_ip}:{target_port} 로 연결 시도 중...")
-        sock.connect((target_ip, target_port))
-        print("연결 성공, 파일 전송 시작합니다.")
-        
-        # csv.reader를 활용해 텍스트 모드로 파일을 열고, 첫 번째 헤더 행은 건너뜁니다.
-        with open(output_filename, "r", encoding="utf-8") as csvfile:
-            reader = csv.reader(csvfile)
-            headers = next(reader)  # 헤더 스킵
-            for row in reader:
-                # 빈 행은 건너뛰기
-                if not row:
-                    continue
-                # 마지막 컬럼은 'Label'로 가정하고, 나머지는 feature 값으로 처리합니다.
-                label = row[-1]
-                feature_strings = row[:-1]
-                features = []
-                for item in feature_strings:
-                    try:
-                        features.append(float(item))
-                    except ValueError:
-                        features.append(item)
-                # 메시지 구성 (전송 포맷 예시)
-                message_payload = {
-                    "event": "classify_packet",
-                    "payload": {
-                        "packet": features,
-                        "true_label": label
+    # 8. 각 대상에 대해 TCP 소켓을 이용해 CSV 파일의 각 행을 한 줄씩 전송 (JSON 메시지 형식)
+    for target_ip, target_port in target_destinations:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            print(f"\n{target_ip}:{target_port} 로 연결 시도 중...")
+            sock.connect((target_ip, target_port))
+            print("연결 성공, 파일 전송 시작합니다.")
+            
+            # csv.reader를 활용해 텍스트 모드로 파일을 열고, 첫 번째 헤더 행은 건너뜁니다.
+            with open(output_filename, "r", encoding="utf-8") as csvfile:
+                reader = csv.reader(csvfile)
+                headers = next(reader)  # 헤더 스킵
+                for row in reader:
+                    if not row:
+                        continue
+                    # 마지막 컬럼은 'Label'로 가정, 나머지는 feature 값으로 처리합니다.
+                    label = row[-1]
+                    feature_strings = row[:-1]
+                    features = []
+                    for item in feature_strings:
+                        try:
+                            features.append(float(item))
+                        except ValueError:
+                            features.append(item)
+                    
+                    # 메시지 구성: 내부 message에 event와 payload를 포함하고, 외부 header는 "OPERATE"
+                    message_payload = {
+                        "event": "classify_packet",
+                        "payload": {
+                            "packet": features,
+                            "true_label": label
+                        }
                     }
+                    full_message = {
+                        "header": "OPERATE",
+                        "message": message_payload
+                    }
+                    message_json = json.dumps(full_message)
+                    message_bytes = message_json.encode("utf-8")
+                    # 4바이트(빅엔디안)로 메시지 길이 전송 후 메시지 전송
+                    message_length = len(message_bytes)
+                    length_bytes = message_length.to_bytes(4, byteorder="big")
+                    sock.sendall(length_bytes + message_bytes)
+            
+            # 전송 완료 후, 종료 메시지 전송 (옵션)
+            termination_message = {
+                "header": "OPERATE",
+                "message": {
+                    "event": "FILE_END",
+                    "payload": {"message": "EOF"}
                 }
-                # 외부 헤더는 "OPERATE" (클라이언트 측 receive_tcp_messages에서 header "OPERATE"를 확인함)
-                message_json = json.dumps(message_payload)
-                message_bytes = message_json.encode("utf-8")
-                # 4바이트(빅엔디안)로 메시지 길이 전송 후 메시지 전송
-                message_length = len(message_bytes)
-                length_bytes = message_length.to_bytes(4, byteorder="big")
-                sock.sendall(length_bytes + message_bytes)
-        
-        # 전송 완료 후, 종료 메시지 전송 (옵션)
-        termination_message = {
-            "event": "FILE_END",
-            "payload": {"message": "EOF"}
-        }
-        end_json = json.dumps(termination_message).encode("utf-8")
-        end_length = len(end_json)
-        sock.sendall(end_length.to_bytes(4, byteorder="big") + end_json)
-        
-        print("파일 전송이 완료되었습니다.")
-    except Exception as e:
-        print(f"파일 전송 중 오류 발생: {e}")
-    finally:
-        sock.close()
+            }
+            end_json = json.dumps(termination_message).encode("utf-8")
+            end_length = len(end_json)
+            sock.sendall(end_length.to_bytes(4, byteorder="big") + end_json)
+            
+            print(f"{target_ip}:{target_port} 에 파일 전송이 완료되었습니다.")
+        except Exception as e:
+            print(f"{target_ip}:{target_port} 로 전송 중 오류 발생: {e}")
+        finally:
+            sock.close()
 
 if __name__ == "__main__":
     main()
