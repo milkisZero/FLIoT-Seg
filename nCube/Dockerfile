@@ -4,6 +4,12 @@ WORKDIR /app
 
 COPY . .
 
+RUN apk add --no-cache \
+    python3 \
+    make \
+    g++ \
+    py3-pip
+
 RUN npm install -g pm2
 
 RUN npm install
