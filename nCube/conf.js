@@ -54,11 +54,7 @@ var count = 0;
 cnt_arr = [
     {
         parent: '/' + cse.name + '/' + ae.name,
-        name: 'weights1',
-    },
-    {
-        parent: '/' + cse.name + '/' + ae.name,
-        name: 'weights2',
+        name: 'attacks1',
     },
     {
         parent: '/' + cse.name + '/' + ae.name,
@@ -141,12 +137,11 @@ conf.acp = acp;
 conf.tas = tas;
 
 let getDataTopic = {
-    weights1: '/thyme/weights1',
-    weights2: '/thyme/weights2',
     fromTas: '/thyme/fromTas',
     client1FromC: '/thyme/client1',
     metrics1: '/thyme/metrics1',
     results1: '/thyme/results1',
+    attacks1: '/thyme/attacks1',
 };
 
 let setDataTopic = {
@@ -159,6 +154,7 @@ let makeConnection = (clientCount) => {
     getDataTopic[clientId + 'FromC'] = '/thyme/' + clientId;
     getDataTopic['metrics' + clientCount] = '/thyme/metrics' + clientCount;
     getDataTopic['results' + clientCount] = '/thyme/results' + clientCount;
+    getDataTopic['attacks' + clientCount] = '/thyme/attacks' + clientCount;
 
     setDataTopic[clientId + 'FromS'] = '/' + clientId + 'FromS/set';
 

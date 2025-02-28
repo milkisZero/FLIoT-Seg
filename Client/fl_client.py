@@ -149,6 +149,7 @@ class FederatedClient(object):
         self.local_model = None
         self.datasource = datasource
         self.stop_training = False
+        self.file_end = False
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             self.tcp_socket.connect((server_host, server_port))
@@ -218,13 +219,15 @@ class FederatedClient(object):
                     # 지정된 길이만큼의 데이터를 읽어들임
                     json_message = self.recv_exactly_from(attacker_conn, message_length)
                     message_data = json.loads(json_message)
-                    print("공격자 메시지 데이터:", message_data)
+                    header = message_data['header']
+                    message = message_data['message']
                     
                     # 공격자 클라이언트의 메시지 처리 로직을 여기에 구현합니다.
-                    self.receive_tcp_messages(message_data)
+                    self.handle_message(header, message)
             except Exception as e:
-                print("공격자 메시지 수신 중 오류:", e)
-                break
+                if not self.file_end:
+                    print("공격자 메시지 수신 중 오류:", e)
+                    break
 
     def recv_exactly_from(self, conn, size):
         """특정 연결(conn)에서 정확히 size 바이트만큼 데이터 수신"""
@@ -302,6 +305,8 @@ class FederatedClient(object):
                 self.on_global_update(message['payload'])
             elif event == 'classify_packet':
                 self.on_classify_packet(message['payload'])
+            elif event == 'file_end':
+                self.on_file_end()
             else:
                 print("Unknown event:", event)
         else:
@@ -523,7 +528,7 @@ class FederatedClient(object):
         payload 예시:
         {
             "packet": [0.1, 0.5, ...],   # 패킷 정보 (특징 데이터 리스트)
-            "true_label": 0              # 실제 라벨 (0: 정상, 1: 이상)
+            "true_label": "nomaly" 또는 "anomaly"  # 실제 라벨
         }
         """
         if self.local_model is None:
@@ -533,9 +538,6 @@ class FederatedClient(object):
             # 수신된 데이터 확인
             packet = payload.get("packet")
             true_label = payload.get("true_label")
-            
-            print("[on_classify_packet] 수신된 패킷:", packet)
-            print("[on_classify_packet] 수신된 실제 라벨:", true_label)
             
             # 패킷 데이터를 numpy 배열로 변환 (모델 입력 크기에 맞게 reshape)
             packet_array = np.array(packet)
@@ -547,19 +549,85 @@ class FederatedClient(object):
             
             # 재구성 오차 (Mean Squared Error) 계산
             error = np.mean(np.square(packet_array - prediction))
-            print("패킷 재구성 오차:", error)
             
-            # 학습 데이터에 대해 모델 예측을 수행하여 임계치(threshold) 계산 
-            # (재구성 오차 백분위수를 이용 – 여기서는 99번째 백분위수 사용)
-            train_preds = self.local_model.model.predict(self.local_model.x_train, batch_size=16, verbose=0)
-            train_losses = np.mean(np.square(self.local_model.x_train - train_preds), axis=1)
-            threshold = np.percentile(train_losses, 99)
-            print("Computed threshold:", threshold)
+            # 임계값(threshold) 확인 - self.local_model.threshold 사용
+            if not hasattr(self.local_model, 'threshold'):
+                # threshold가 없는 경우 처음 한 번만 계산
+                print("임계값 없음, 임계값 계산 중...")
+                train_preds = self.local_model.model.predict(self.local_model.x_train, batch_size=16, verbose=0)
+                train_losses = np.mean(np.square(self.local_model.x_train - train_preds), axis=1)
+                self.local_model.threshold = np.percentile(train_losses, 99)
+                print(f"임계값 계산 완료: {self.local_model.threshold:.6f}")
             
-            result = "anomaly" if error > threshold else "normal"
-            print(f"예측 결과: {result} (오차: {error})")
+            threshold = self.local_model.threshold
+            
+            # nomaly/anomaly 분류
+            result = "anomaly" if error > threshold else "nomaly"
+            
+            # 예측 결과와 실제 라벨 비교
+            is_correct = result == true_label
+            
+            # 통계 초기화 (필요한 경우)
+            if not hasattr(self, 'classification_stats'):
+                self.classification_stats = {
+                    'nomaly_correct_predictions': 0, 
+                    'anomaly_correct_predictions': 0,
+                    'nomaly_incorrect_predictions': 0,
+                    'anomaly_incorrect_predictions': 0
+                }
+            
+            # 통계 업데이트
+            if is_correct:
+                if true_label == 'nomaly':
+                    self.classification_stats['nomaly_correct_predictions'] += 1
+                else:
+                    self.classification_stats['anomaly_correct_predictions'] += 1
+            else:
+                if true_label == 'nomaly':
+                    self.classification_stats['nomaly_incorrect_predictions'] += 1
+                else:
+                    self.classification_stats['anomaly_incorrect_predictions'] += 1
+
+            # 요청한 형식으로 결과 출력
+            print(f"\n패킷 분류 결과:")
+            print(f"  실제 라벨 (매핑 후): {true_label}")
+            print(f"  예측 라벨 (nomaly/anomaly): {result}")
+            print(f"  재구성 오차: {error:.6f}")
+            print(f"  임계값 (99번째 백분위수): {threshold:.6f}")
+            
+            print(f"\n누적 예측 결과:")
+            print(f"  nomaly 정답 개수: {self.classification_stats['nomaly_correct_predictions']}")
+            print(f"  nomaly 오답 개수: {self.classification_stats['nomaly_incorrect_predictions']}")
+            print(f"  anomaly 정답 개수: {self.classification_stats['anomaly_correct_predictions']}")
+            print(f"  anomaly 오답 개수: {self.classification_stats['anomaly_incorrect_predictions']}")
+            
+            # 정답률 계산 (소수점 둘째 자리까지)
+            accuracy = self.classification_stats['correct'] / self.classification_stats['total'] * 100
+            print(f"  전체 정답률: {accuracy:.2f}%")
+            
         except Exception as e:
             print("분류 중 오류 발생:", e)
+
+    def on_file_end(self):
+        try:
+            header = b'ATTACKS'
+            # 딕셔너리 키 이름 확인 (이전에 사용한 키 이름과 일치시킴)
+            message = {
+                'nomaly_correct_predictions': self.classification_stats['nomaly_correct_predictions'],
+                'nomaly_incorrect_predictions': self.classification_stats['nomaly_incorrect_predictions'],
+                'anomaly_correct_predictions': self.classification_stats['anomaly_correct_predictions'],
+                'anomaly_incorrect_predictions': self.classification_stats['anomaly_incorrect_predictions']
+            }
+            
+            # 딕셔너리를 JSON 문자열로 변환
+            message_json = json.dumps(message)
+            
+            # 문자열을 전송
+            self.send_tcp_message(header, message_json)
+            self.file_end = True
+            print("파일 종료 메시지 수신 및 처리 완료")
+        except Exception as e:
+            print("파일 종료 처리 중 오류 발생:", e)
 
 if __name__ == "__main__":
     time_start = time.time()

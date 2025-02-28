@@ -54,6 +54,7 @@ let createConnection = () => {
                     push_cnt_arr(clientId + 'FromC', '/thyme/' + clientId, 1);
                     push_cnt_arr('metrics' + clientCount, '/thyme/metrics' + clientCount, 1);
                     push_cnt_arr('results' + clientCount, '/thyme/results' + clientCount, 1);
+                    push_cnt_arr('attacks' + clientCount, '/thyme/attacks' + clientCount, 1);
                     push_cnt_arr(clientId + 'FromS', '/' + clientId + 'FromS/set', 0);
                 } else if (key) {
                     try {

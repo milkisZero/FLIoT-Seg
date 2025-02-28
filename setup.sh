@@ -3,11 +3,22 @@
 # docker-compose.yaml 파일을 생성한 후 template.docker 파일의 내용을 반복해서 추가하고,
 # 또한 각 Client 폴더의 Dockerfile 내의 __CLIENT_NUMBER__ 플레이스홀더를 치환합니다.
 
+# .env.example 파일이 존재하고 .env 파일이 없으면 복사
+if [ ! -f .env ] && [ -f .env.example ]; then
+  echo ".env 파일이 없고 .env.example 파일이 존재합니다. .env.example를 .env로 복사합니다."
+  cp .env.example .env
+fi
+
 # .env 파일이 존재하면 환경변수 로드 (.env 파일에는 CLIENT와 DOCKER_NETWORK 값이 포함되어야 함)
 if [ -f .env ]; then
+  echo ".env 파일을 로드합니다."
   set -a
   source .env
   set +a
+else
+  echo ".env 파일이 존재하지 않습니다. 환경 변수 설정이 필요합니다."
+  echo "CLIENT와 DOCKER_NETWORK 환경변수를 설정하세요."
+  exit 1
 fi
 
 # 불필요한 공백, 개행(\n,\r) 제거

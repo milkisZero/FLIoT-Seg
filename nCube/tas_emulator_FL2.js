@@ -51,8 +51,8 @@ socket.on('connection', (client) => {
                 const dataSize = dataBuffer.readUInt32BE(HEADER_SIZE);
                 if (dataBuffer.length >= HEADER_SIZE + 4 + dataSize) {
                     const payload = dataBuffer.slice(HEADER_SIZE + 4, HEADER_SIZE + 4 + dataSize);
-                    if (header === 'WEIGHTS') {
-                        processWeightsData(payload, clientId);
+                    if (header === 'ATTACKS') {
+                        processAttacksData(payload, clientId);
                     } else if (header === 'METRICS') {
                         processMetricsData(payload, clientId);
                     } else if (header === 'RESULTS') {
@@ -80,13 +80,13 @@ socket.listen(serverPort, serverAddress, () => {
     console.log(`Server listening on ${serverAddress}:${serverPort}`);
 });
 
-function processWeightsData(data, clientId) {
-    console.log(`Processing weights data from ${clientId}, size: ${data.length} bytes`);
-    const weightstopic = sendDataTopic[`weights${clientId.slice(-1)}`];
-    if (weightstopic) {
-        doPublish(weightstopic, data);
+function processAttacksData(data, clientId) {
+    console.log(`Processing attacks data from ${clientId}, size: ${data.length} bytes`);
+    const attackstopic = sendDataTopic[`attacks${clientId.slice(-1)}`];
+    if (attackstopic) {
+        doPublish(attackstopic, data);
     } else {
-        console.error(`No weights topic found for client ${clientId}`);
+        console.error(`No attacks topic found for client ${clientId}`);
     }
 }
 
