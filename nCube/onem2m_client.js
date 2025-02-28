@@ -1872,7 +1872,7 @@ var crtci = function(parent, count, strContent, socket, callback) {
         else { // 'json'
             mqtt_client.publish(req_topic, JSON.stringify(req_message['m2m:rqp']));
 
-            console.log(req_topic + ' (json) ' + JSON.stringify(req_message['m2m:rqp']) + ' ---->');
+            // console.log(req_topic + ' (json) ' + JSON.stringify(req_message['m2m:rqp']) + ' ---->');
         }
     }
     else if(onem2m_options.protocol === 'coap') {
@@ -2182,7 +2182,7 @@ function mqtt_connect(serverip, port, noti_topic) {
             }
 
             if(topic_arr[1] === 'oneM2M' && topic_arr[2] === 'req' && topic_arr[4] === onem2m_options.aei) {
-                console.log(message.toString());
+                // console.log(message.toString());
                 if(bodytype === 'xml') {
                     var parser = new xml2js.Parser({explicitArray: false});
                     parser.parseString(message.toString(), function (err, jsonObj) {

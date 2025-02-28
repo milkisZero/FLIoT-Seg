@@ -5,22 +5,7 @@ exports.buffer = tas_buffer;
 let mqtt = require('mqtt');
 let moment = require('moment');
 
-let getDataTopic = {
-    weights1: '/thyme/weights1',
-    weights2: '/thyme/weights2',
-    metrics1: '/thyme/metrics1',
-    metrics2: '/thyme/metrics2',
-    results1: '/thyme/results1',
-    results2: '/thyme/results2',
-    client1FromC: '/thyme/client1',
-    client2FromC: '/thyme/client2',
-};
-
-let setDataTopic = {
-    led: '/led/set',
-    client1FromS: '/client1FromS/set',
-    client2FromS: '/client2FromS/set',
-};
+const { makeConnection, getDataTopic, setDataTopic } = require('./conf.js');
 
 let createConnection = () => {
     if (conf.tas.client.connected) {
@@ -59,72 +44,20 @@ let createConnection = () => {
             conf.tas.client.on('message', (topic, message) => {
                 let content = null;
                 let parent = null;
-                if (topic === getDataTopic.weights1 || topic === getDataTopic.weights2) {
+                // console.log(topic);
+                const key = Object.keys(getDataTopic).find((key) => getDataTopic[key] === topic);
+
+                if (topic === getDataTopic.fromTas) {
+                    clientCount = JSON.parse(message.toString()) + 1;
+                    makeConnection(clientCount);
+                    const clientId = `client${clientCount}`;
+                    push_cnt_arr(clientId + 'FromC', '/thyme/' + clientId, 1);
+                    push_cnt_arr('metrics' + clientCount, '/thyme/metrics' + clientCount, 1);
+                    push_cnt_arr('results' + clientCount, '/thyme/results' + clientCount, 1);
+                    push_cnt_arr(clientId + 'FromS', '/' + clientId + 'FromS/set', 0);
+                } else if (key) {
                     try {
-                        parent =
-                            topic === getDataTopic.weights1
-                                ? conf.cnt[1].parent + '/' + conf.cnt[0].name
-                                : conf.cnt[1].parent + '/' + conf.cnt[1].name;
-                        content = message;
-                        console.log(`Received weights data: ${topic}, size: ${message.length} bytes`);
-                        if (content) {
-                            onem2m_client.create_cin(parent, 1, content, this, (status, res_body, to, socket) => {
-                                console.log('x-m2m-rsc : ' + status + ' <----');
-                            });
-                        }
-                    } catch (error) {
-                        console.error('Error processing weights data:', error);
-                    }
-                } else if (topic === getDataTopic.metrics1 || topic === getDataTopic.metrics2) {
-                    try {
-                        parent =
-                            topic === getDataTopic.metrics1
-                                ? conf.cnt[1].parent + '/' + conf.cnt[2].name
-                                : conf.cnt[1].parent + '/' + conf.cnt[3].name;
-                        content = JSON.parse(message.toString());
-                        console.log(`Received metrics data: ${topic}`);
-                        if (content) {
-                            onem2m_client.create_cin(
-                                parent,
-                                1,
-                                JSON.stringify(content),
-                                this,
-                                (status, res_body, to, socket) => {
-                                    console.log('x-m2m-rsc : ' + status + ' <----');
-                                }
-                            );
-                        }
-                    } catch (error) {
-                        console.error('Error processing metrics data:', error);
-                    }
-                } else if (topic === getDataTopic.results1 || topic === getDataTopic.results2) {
-                    try {
-                        parent =
-                            topic === getDataTopic.results1
-                                ? conf.cnt[1].parent + '/' + conf.cnt[4].name
-                                : conf.cnt[1].parent + '/' + conf.cnt[5].name;
-                        content = JSON.parse(message.toString());
-                        console.log(`Received results data: ${topic}`);
-                        if (content) {
-                            onem2m_client.create_cin(
-                                parent,
-                                1,
-                                JSON.stringify(content),
-                                this,
-                                (status, res_body, to, socket) => {
-                                    console.log('x-m2m-rsc : ' + status + ' <----');
-                                }
-                            );
-                        }
-                    } catch (error) {
-                        console.error('Error processing results data:', error);
-                    }
-                } else if (topic === getDataTopic.client1FromC || topic === getDataTopic.client2FromC) {
-                    try {
-                        parent =
-                            topic === getDataTopic.client1FromC
-                                ? conf.cnt[1].parent + '/' + conf.cnt[6].name
-                                : conf.cnt[1].parent + '/' + conf.cnt[7].name;
+                        parent = conf.cnt[1].parent + '/' + key;
                         content = JSON.parse(message.toString());
                         console.log(`Received client data: ${topic}`);
                         if (content) {
@@ -139,7 +72,7 @@ let createConnection = () => {
                             );
                         }
                     } catch (error) {
-                        console.error('Error processing results data:', error);
+                        console.error('Error processing data:', error);
                     }
                 }
             });
@@ -148,6 +81,7 @@ let createConnection = () => {
         }
     }
 };
+
 let doSubscribe = (topic) => {
     if (conf.tas.client.connected) {
         const qos = 0;
@@ -216,9 +150,46 @@ exports.ready_for_tas = function ready_for_tas() {
 };
 
 exports.send_to_tas = function send_to_tas(topicName, message) {
-    console.log(message);
-    console.log(message.toString());
+    // console.log(message);
+    // console.log(message.toString());
     if (setDataTopic.hasOwnProperty(topicName)) {
         conf.tas.client.publish(setDataTopic[topicName], JSON.stringify(message));
     }
+};
+
+let push_cnt_arr = (key, value, tag) => {
+    if (conf.cnt.some((item) => item.name === key)) return;
+
+    conf.cnt.push({
+        parent: '/' + conf.cse.name + '/' + conf.ae.name,
+        name: key,
+    });
+
+    let count = conf.cnt.length - 1;
+    var parent = conf.cnt[count].parent;
+    var rn = conf.cnt[count].name;
+    onem2m_client.create_cnt(parent, rn, count, (rsc, res_body, count) => {
+        console.log('created container: ', rn);
+        if (tag) doSubscribe(value);
+        else sub_for_mobius(key);
+    });
+
+};
+
+let sub_for_mobius = (value) => {
+    if (conf.sub.some((item) => item.name === value)) return;
+
+    conf.sub.push({
+        parent: '/' + conf.cse.name + '/' + conf.ae.name + '/' + value,
+        name: value,
+        nu: 'mqtt://' + conf.cse.host + ':' + conf.cse.mqttport + '/' + conf.ae.id + '?ct=json',
+    });
+
+    let count = conf.sub.length - 1;
+    var parent = conf.sub[count].parent;
+    var rn = conf.sub[count].name;
+    var nu = conf.sub[count].nu;
+    onem2m_client.create_sub(parent, rn, nu, count, (rsc, res_body, count) => {
+        console.log('created subscribe container: ', rn);
+    });
 };

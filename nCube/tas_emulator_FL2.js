@@ -3,7 +3,7 @@ let { nanoid } = require('nanoid');
 let net = require('net');
 const fs = require('fs');
 const path = require('path');
-let serverAddress = '192.168.0.10';
+let serverAddress = 'gateway';
 let serverPort = 3105;
 const HEADER_SIZE = 7; // 'WEIGHTS' 또는 'METRICS' 헤더의 크기
 
@@ -12,7 +12,7 @@ let tas = {
         connected: false,
     },
     connection: {
-        host: '192.168.0.60',
+        host: 'mobius',
         port: 1883,
         endpoint: '',
         clean: true,
@@ -23,21 +23,9 @@ let tas = {
         password: 'keti_thyme',
     },
 };
-let sendDataTopic = {
-    weights1: '/thyme/weights1',
-    weights2: '/thyme/weights2',
-    metrics1: '/thyme/metrics1',
-    metrics2: '/thyme/metrics2',
-    results1: '/thyme/results1',
-    results2: '/thyme/results2',
-    client1FromC: '/thyme/client1',
-    client2FromC: '/thyme/client2',
-};
-let recvDataTopic = {
-    led: '/led/set',
-    client1FromS: '/client1FromS/set',
-    client2FromS: '/client2FromS/set',
-};
+
+const { makeConnection, getDataTopic: sendDataTopic, setDataTopic: recvDataTopic } = require('./conf.js');
+
 let socket = net.createServer();
 let clientCount = 0;
 const clients = new Map(); // for communication
@@ -46,10 +34,14 @@ socket.on('connection', (client) => {
     clientCount++;
     const clientId = `client${clientCount}`;
     console.log(`Connected to Sender Raspberry Pi (${clientId})`);
+
     let dataBuffer = Buffer.alloc(0);
     let dataSize = null;
 
     clients.set(clientId, client);
+    makeConnection(clientCount);
+    doSubscribe(recvDataTopic[clientId + 'FromS']);
+    doPublish('/thyme/fromTas', JSON.stringify(clientCount));
 
     client.on('data', (data) => {
         try {
@@ -170,8 +162,6 @@ let createConnection = () => {
                     if (match) {
                         const bufferData = Buffer.from(message);
                         const decodedMessage = JSON.parse(bufferData.toString());
-                        // decodedMessage = JSON.parse(decodedMessage);
-                        console.log(decodedMessage);
                         message = decodedMessage;
 
                         const clientId = match[1];
@@ -189,7 +179,6 @@ let createConnection = () => {
                                 const fullMessage = Buffer.concat([messageLength, messageBuffer]);
 
                                 clientSocket.write(fullMessage);
-                                console.log('Sent JSON message to client:', jsonMessage);
                             } catch (error) {
                                 console.error('Error broadcasting message:', error);
                             }
@@ -249,4 +238,5 @@ let destroyConnection = () => {
         }
     }
 };
+
 createConnection();

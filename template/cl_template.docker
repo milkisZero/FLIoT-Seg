@@ -1,0 +1,21 @@
+  client{NUM}:
+    build:
+      context: ./Client
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+    container_name: federated_client{NUM}
+    networks:
+      federated_network:
+        ipv4_address: {IP}
+    volumes:
+      - ./Client/CICIDS_Splitted/client{NUM}_train.csv:/app/CICIDS_Splitted/client_train.csv
+      - ./Client/CICIDS_Splitted/client{NUM}_test.csv:/app/CICIDS_Splitted/client_test.csv
+      - ./Client/fl_client.py:/app/fl_client.py
+    ports:
+      - {PORT}:4000
+    depends_on:
+      server:
+        condition: service_healthy
