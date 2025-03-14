@@ -6,3 +6,4 @@ __pycache__/
 CICIDS_Splitted/
 CICIDS
 node_modules/
+*.csv
