@@ -4,6 +4,7 @@ let net = require('net');
 const fs = require('fs');
 const path = require('path');
 let serverAddress = 'gateway';
+let serverAddress = 'gateway';
 let serverPort = 3105;
 const HEADER_SIZE = 7; // 'WEIGHTS' 또는 'METRICS' 헤더의 크기
 
@@ -12,6 +13,7 @@ let tas = {
         connected: false,
     },
     connection: {
+        host: 'mobius',
         host: 'mobius',
         port: 1883,
         endpoint: '',
@@ -26,6 +28,9 @@ let tas = {
 
 const { makeConnection, getDataTopic: sendDataTopic, setDataTopic: recvDataTopic } = require('./conf.js');
 
+
+const { makeConnection, getDataTopic: sendDataTopic, setDataTopic: recvDataTopic } = require('./conf.js');
+
 let socket = net.createServer();
 let clientCount = 0;
 const clients = new Map(); // for communication
@@ -35,10 +40,14 @@ socket.on('connection', (client) => {
     const clientId = `client${clientCount}`;
     console.log(`Connected to Sender Raspberry Pi (${clientId})`);
 
+
     let dataBuffer = Buffer.alloc(0);
     let dataSize = null;
 
     clients.set(clientId, client);
+    makeConnection(clientCount);
+    doSubscribe(recvDataTopic[clientId + 'FromS']);
+    doPublish('/thyme/fromTas', JSON.stringify(clientCount));
     makeConnection(clientCount);
     doSubscribe(recvDataTopic[clientId + 'FromS']);
     doPublish('/thyme/fromTas', JSON.stringify(clientCount));
@@ -51,6 +60,8 @@ socket.on('connection', (client) => {
                 const dataSize = dataBuffer.readUInt32BE(HEADER_SIZE);
                 if (dataBuffer.length >= HEADER_SIZE + 4 + dataSize) {
                     const payload = dataBuffer.slice(HEADER_SIZE + 4, HEADER_SIZE + 4 + dataSize);
+                    if (header === 'ATTACKS') {
+                        processAttacksData(payload, clientId);
                     if (header === 'ATTACKS') {
                         processAttacksData(payload, clientId);
                     } else if (header === 'METRICS') {
@@ -85,7 +96,13 @@ function processAttacksData(data, clientId) {
     const attackstopic = sendDataTopic[`attacks${clientId.slice(-1)}`];
     if (attackstopic) {
         doPublish(attackstopic, data);
+function processAttacksData(data, clientId) {
+    console.log(`Processing attacks data from ${clientId}, size: ${data.length} bytes`);
+    const attackstopic = sendDataTopic[`attacks${clientId.slice(-1)}`];
+    if (attackstopic) {
+        doPublish(attackstopic, data);
     } else {
+        console.error(`No attacks topic found for client ${clientId}`);
         console.error(`No attacks topic found for client ${clientId}`);
     }
 }
@@ -238,5 +255,6 @@ let destroyConnection = () => {
         }
     }
 };
+
 
 createConnection();
