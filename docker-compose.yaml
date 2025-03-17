@@ -89,7 +89,6 @@ services:
     depends_on:
       server:
         condition: service_healthy
-
   client1:
     build:
       context: ./Client
