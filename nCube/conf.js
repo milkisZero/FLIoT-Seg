@@ -29,7 +29,6 @@ conf.sim = 'disable'; // enable or disable
 // build cse
 cse = {
     host: 'mobius',
-    host: 'mobius',
     port: '7579',
     name: 'Mobius',
     id: '/Mobius2',
@@ -38,7 +37,6 @@ cse = {
 };
 
 // build ae
-let ae_name = 'FLIoT';
 let ae_name = 'FLIoT';
 
 ae = {
@@ -62,10 +60,6 @@ cnt_arr = [
     //     parent: '/' + cse.name + '/' + ae.name,
     //     name: 'metrics2',
     // },
-    // {
-    //     parent: '/' + cse.name + '/' + ae.name,
-    //     name: 'metrics2',
-    // },
     {
         parent: '/' + cse.name + '/' + ae.name,
         name: 'results1',
@@ -74,18 +68,10 @@ cnt_arr = [
     //     parent: '/' + cse.name + '/' + ae.name,
     //     name: 'results2',
     // },
-    // {
-    //     parent: '/' + cse.name + '/' + ae.name,
-    //     name: 'results2',
-    // },
     {
         parent: '/' + cse.name + '/' + ae.name,
         name: 'client1FromC',
     },
-    // {
-    //     parent: '/' + cse.name + '/' + ae.name,
-    //     name: 'client2FromC',
-    // },
     // {
     //     parent: '/' + cse.name + '/' + ae.name,
     //     name: 'client2FromC',
@@ -109,8 +95,6 @@ sub_arr = [
     {
         parent: '/' + cse.name + '/' + ae.name + '/' + 'client1FromS',
         name: 'client1FromS',
-        parent: '/' + cse.name + '/' + ae.name + '/' + 'client1FromS',
-        name: 'client1FromS',
         nu: 'mqtt://' + cse.host + ':' + cse.mqttport + '/' + ae.id + '?ct=json', // 'http:/' + ip.address() + ':' + ae.port + '/noti?ct=json',
     },
 ];
@@ -122,7 +106,6 @@ let tas = {
     },
 
     connection: {
-        host: 'mobius',
         host: 'mobius',
         port: 1883,
         endpoint: '',
