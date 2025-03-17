@@ -1,8 +1,8 @@
 # Stage 1: eclipse-mosquitto 이미지에서 Mosquitto 관련 파일 및 라이브러리 복사
 FROM eclipse-mosquitto:1.6 AS mosq
 
-# Stage 2: node alpine 이미지를 최종 베이스로 사용
-FROM node:20.18.0-alpine
+# Stage 2: node slim 이미지를 최종 베이스로 사용
+FROM node:20.18.0-slim
 
 # eclipse-mosquitto에서 Mosquitto 바이너리와 설정 파일 복사
 COPY --from=mosq /usr/sbin/mosquitto /usr/sbin/mosquitto
@@ -16,9 +16,22 @@ COPY --from=mosq /lib/ld-musl-*.so* /lib/
 # OpenSSL 설정 파일 복사
 COPY --from=mosq /etc/ssl /etc/ssl
 
-# 필요한 패키지 설치
-RUN apk add --no-cache supervisor curl python3 make g++ openssl && \
-    adduser -S mosquitto
+# 단계 1: 시스템 업데이트 및 업그레이드 후 기본 패키지 설치
+RUN apt-get update && apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends supervisor curl python3
+
+# 단계 2: 나머지 패키지 설치 (make, g++, openssl) - 비대화형 모드 적용 및 dpkg 옵션 추가
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::="--force-confnew" install -y --no-install-recommends make g++ && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# openssl 별도 설치 (설치 오류 발생 시 dpkg --configure -a 후 설치)
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::="--force-confnew" install -y --no-install-recommends openssl && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# 사용자 생성 (Debian slim에서는 --system 옵션 사용)
+RUN adduser --system --no-create-home --group mosquitto
 
 # 작업 디렉토리 설정 (Mobius 애플리케이션 위치)
 WORKDIR /home/node/app

@@ -59,7 +59,7 @@ import tensorflow as tf
 import resource  # 메모리 측정을 위한 리소스 모듈 임포트
 
 print("now is {}".format(datetime.datetime.today()))
-datasource = gen_train_valid_data(benign_only=True)
+datasource = gen_train_valid_data(benign_only=False)
 # datasource가 6개의 항목으로 구성됨: X_train, y_train, X_test, y_test, orig_y_train, orig_y_test
 data_to_save = {
     "X_train": datasource[0].tolist(),
