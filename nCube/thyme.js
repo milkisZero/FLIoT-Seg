@@ -44,4 +44,3 @@ global.mqtt_client = null;
 // else {
     require('./app');
 // }
-

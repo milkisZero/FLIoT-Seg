@@ -4,6 +4,10 @@
 # 또한 각 Client 폴더의 Dockerfile 내의 __CLIENT_NUMBER__ 플레이스홀더를 치환합니다.
 
 # .env 파일이 존재하면 환경변수 로드 (.env 파일에는 CLIENT와 DOCKER_NETWORK 값이 포함되어야 함)
+if [ ! -f .env ]; then
+  cp .env.example .env
+fi
+
 if [ -f .env ]; then
   set -a
   source .env
