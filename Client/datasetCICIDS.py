@@ -6,7 +6,7 @@ import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 
 
-def gen_train_valid_data():
+def gen_train_valid_data(benign_only=False):
     # Read the client_1 train and test files.
     training_df = pd.read_csv("CICIDS_Splitted/client_train.csv")
     testing_df = pd.read_csv("CICIDS_Splitted/client_test.csv")
@@ -59,6 +59,10 @@ def gen_train_valid_data():
     # Apply the transformation.
     training_df["Class"] = training_df.apply(label_transform, axis=1)
     testing_df["Class"] = testing_df.apply(label_transform, axis=1)
+    
+    # 원래 Label 보존 (이후 JSON 저장 시 활용)
+    orig_y_train = training_df["Label"].values.copy()
+    orig_y_test = testing_df["Label"].values.copy()
 
     # Drop the original Label column.
     training_df.drop("Label", axis=1, inplace=True)
@@ -78,7 +82,6 @@ def gen_train_valid_data():
         testing_df[col] = scaler.transform(testing_df[col].values.reshape(-1, 1))
 
     # Now separate features and labels.
-    # Following your example, we remove "Class" from the DataFrame and obtain the label array.
     x, y = training_df, training_df.pop("Class").values
     X_train = x.values
     x_test, y_test = testing_df, testing_df.pop("Class").values
@@ -92,5 +95,8 @@ def gen_train_valid_data():
     y_test_binary = np.ones(len(y_test), np.int8)
     y_test_binary[np.where(y_test == "BENIGN")] = 0
 
-    # In your example, only the benign training samples are returned.
-    return X_train[np.where(y_train == 0)], y_train, X_test, y_test_binary
+    if benign_only:
+        indices = np.where(y_train == 0)[0]
+        return X_train[indices], y_train[indices], X_test, y_test_binary, orig_y_train[indices], orig_y_test
+    else:
+        return X_train, y_train, X_test, y_test_binary, orig_y_train, orig_y_test

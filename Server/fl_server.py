@@ -9,37 +9,37 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'  # 0 = all logs, 1 = filter out INFO, 2
 
 from collections import defaultdict
 from typing import Dict, List, Type
-from keras.models import load_model
-from tensorflow.keras.layers import Layer  # Raspberry yxyao 20241224
-from tensorflow.keras.models import Model 
-
-import pickle#python中几乎所有的数据类型（列表，字典，集合，类等）都可以用pickle来序列化，
-import keras
-import uuid#  UUID是128位的全局唯一标识符，通常由32字节的字符串表示。它可以保证时间和空间的唯一性，也称为GUID，全称为：
-            #UUID —— Universally Unique IDentifier      Python 中叫 UUID
-    #它通过MAC地址、时间戳、命名空间、随机数、伪随机数来保证生成ID的唯一性。
-from tensorflow.keras.models import Sequential,Model
-from tensorflow.keras.layers import Input 
-from keras.layers import Dense, Dropout, Flatten
-from tensorflow.keras.layers import LeakyReLU 
-import tensorflow as tf
-from keras import backend as K
-
-
-import msgpack#信息压缩
-import random
-import codecs#Python中用codecs处理各种字符编码的文件
+import pickle
+import uuid
+import codecs
 import numpy as np
 import json
+import msgpack
+import msgpack_numpy
+import logging
+import sys
+import time
+from sklearn.metrics.pairwise import cosine_similarity
+from flask import *
+from flask_socketio import SocketIO
+from flask_socketio import *
+
+# tensorflow.keras로 변경
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras.models import Sequential, Model, load_model
+from tensorflow.keras.layers import (
+    Input, Dense, Dropout, Flatten, LeakyReLU
+)
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras import backend as K
+
+import random
 import msgpack_numpy#信息编码格式
 # https://github.com/lebedov/msgpack-numpy
 import logging
 from sklearn.preprocessing import MinMaxScaler
-import keras.backend as K
 from keras.layers.core import Lambda
-
-from keras.models import load_model
-
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,7 +48,6 @@ logging.basicConfig(
 import sys
 #from ranger import Ranger
 import time
-from sklearn.metrics.pairwise import cosine_similarity
 from flask import *
 from flask_socketio import SocketIO#SocketIO是大名鼎鼎的实时通讯库,可以在服务器和页面之间轻松的实现双向实时通讯, 兼容性好,使用方便.多用来制作聊天/直播室, 等需要实时传输数据的地方.
 from flask_socketio import *
@@ -144,29 +143,44 @@ class GlobalModel_CICIDS(GlobalModel):
         super(GlobalModel_CICIDS, self).__init__()
 
     def build_model(self):
-        # ~35MB worth of parameters
-        #怎么获得模型大小
-        # input数据接口
         input_img = Input(shape=(78,))
-        x = Dense(64, activation='relu', kernel_initializer='random_uniform',name='encoded1')(input_img)
-        x = Dense(32, activation='tanh',  name='encoded2')(x)
-        x = Dense(12, activation='tanh',  name='encoded3')(x)
-        x = Dense(78, activation=None,  name='net0_decoded4')(x)
-        model = Model(inputs=input_img, outputs=x)
+        
+        # Encoder
+        encoded = Dense(128, activation='relu', kernel_initializer='he_uniform')(input_img)
+        encoded = Dropout(0.2)(encoded)
+        
+        encoded = Dense(64, activation='relu')(encoded)
+        encoded = Dropout(0.2)(encoded)
+        
+        # Bottleneck
+        bottleneck = Dense(32, activation='relu', name='bottleneck')(encoded)
+        
+        # Decoder
+        decoded = Dense(64, activation='relu')(bottleneck)
+        decoded = Dropout(0.2)(decoded)
+        
+        decoded = Dense(128, activation='relu')(decoded)
+        decoded = Dropout(0.2)(decoded)
+        
+        # Output
+        output = Dense(78, activation='sigmoid')(decoded)
+        
+        # Model
+        model = Model(inputs=input_img, outputs=output)
+        
+        optimizer = Adam(learning_rate=0.001)
+        model.compile(
+            loss='mean_squared_error',
+            optimizer=optimizer,
+            metrics=['accuracy']
+        )
+        
         model.summary()
-        for layer in model.layers:
-            print(layer.name)
-
-        #adam = keras.optimizers.Adam(lr=0.0005, beta_1=0.95, beta_2=0.999, epsilon=1e-08)
-        adam = keras.optimizers.Adam(lr = 0.007, beta_1=0.95, beta_2=0.999,epsilon=1e-08)
-        # sgd = keras.optimizers.SGD(lr = 0.001, decay = 1e-06, momentum = 0.9, nesterov = False)
-        # reduce_lr = ReduceLROnPlateau(monitor = 'loss', factor = 0.1, patience = 2,verbose = 1, min_lr = 0.00000001, mode = 'min')
-        model.compile(loss=keras.losses.mean_squared_error, optimizer=adam, metrics=['accuracy'])
         return model
 
 class FLServer(object):
     MIN_NUM_WORKERS = 2#最少节点数量设置
-    MAx_NUM_ROUNDS = 10#设定联邦循环次数
+    MAx_NUM_ROUNDS = 50#设定联邦循环次数
     NUM_CLIENTS_CONTACTED_PER_ROUND = 2#设置节点数量，作用，多少比例的掉队。
     ROUNDS_BETWEEN_VALIDATIONS = 2
     WINDOW_SIZE = 2

@@ -8,20 +8,30 @@ FROM node:20.18.0-slim
 COPY --from=mosq /usr/sbin/mosquitto /usr/sbin/mosquitto
 COPY --from=mosq /mosquitto/config /etc/mosquitto
 
-# Mosquitto 바이너리가 요구하는 musl 동적 링커와 libc를 /lib에 복사
-COPY --from=mosq /lib/ld-musl-x86_64.so.1 /lib/ld-musl-x86_64.so.1
-COPY --from=mosq /lib/libc.musl-x86_64.so.1 /lib/libc.musl-x86_64.so.1
+# Mosquitto 바이너리가 요구하는 모든 필요한 라이브러리 복사
+COPY --from=mosq /usr/lib/libssl.so* /usr/lib/
+COPY --from=mosq /usr/lib/libcrypto.so* /usr/lib/
+COPY --from=mosq /lib/ld-musl-*.so* /lib/
 
-# Mosquitto 바이너리가 요구하는 libssl과 libcrypto를 /opt/musl-libs에 복사
-RUN mkdir -p /opt/musl-libs
-COPY --from=mosq /usr/lib/libssl.so.48 /opt/musl-libs/
-COPY --from=mosq /usr/lib/libcrypto.so.46 /opt/musl-libs/
+# OpenSSL 설정 파일 복사
+COPY --from=mosq /etc/ssl /etc/ssl
 
-# 필요한 패키지(예: supervisor, curl) 설치 후 mosquitto 사용자 생성
+# 단계 1: 시스템 업데이트 및 업그레이드 후 기본 패키지 설치
+RUN apt-get update && apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends supervisor curl python3
+
+# 단계 2: 나머지 패키지 설치 (make, g++, openssl) - 비대화형 모드 적용 및 dpkg 옵션 추가
 RUN apt-get update && \
-    apt-get install -y supervisor curl && \
-    rm -rf /var/lib/apt/lists/* && \
-    useradd -r mosquitto
+    DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::="--force-confnew" install -y --no-install-recommends make g++ && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# openssl 별도 설치 (설치 오류 발생 시 dpkg --configure -a 후 설치)
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::="--force-confnew" install -y --no-install-recommends openssl && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# 사용자 생성 (Debian slim에서는 --system 옵션 사용)
+RUN adduser --system --no-create-home --group mosquitto
 
 # 작업 디렉토리 설정 (Mobius 애플리케이션 위치)
 WORKDIR /home/node/app
@@ -34,13 +44,17 @@ RUN npm install
 COPY . .
 
 # Supervisor와 Mosquitto 로그용, 애플리케이션 로그 디렉토리 생성
-RUN mkdir -p /home/node/app/log /var/log/mosquitto
+RUN mkdir -p /home/node/app/log /var/log/mosquitto && \
+    chown -R mosquitto:root /var/log/mosquitto
 
-# Supervisor 설정 파일 복사  
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+# Mosquitto 설정 수정 (필요한 경우)
+RUN echo "listener 1883 0.0.0.0" >> /etc/mosquitto/mosquitto.conf && \
+    echo "allow_anonymous true" >> /etc/mosquitto/mosquitto.conf
 
-# 포트 노출: 7579 (Mobius 애플리케이션), 1883 (Mosquitto 브로커)
-EXPOSE 7579 1883
+# supervisord.conf 파일 수정하여 Mosquitto 환경 변수 추가
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf 
+RUN grep -q "environment=" /etc/supervisor/conf.d/supervisord.conf || \
+    sed -i '/\[program:mosquitto\]/a environment=LD_LIBRARY_PATH=/usr/lib:/lib' /etc/supervisor/conf.d/supervisord.conf
 
 # Supervisor를 PID1로 실행하여 Mosquitto와 Node 프로세스를 동시에 관리
 CMD ["supervisord", "-n", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

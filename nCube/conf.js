@@ -29,6 +29,7 @@ conf.sim = 'disable'; // enable or disable
 // build cse
 cse = {
     host: 'mobius',
+    host: 'mobius',
     port: '7579',
     name: 'Mobius',
     id: '/Mobius2',
@@ -37,6 +38,7 @@ cse = {
 };
 
 // build ae
+let ae_name = 'FLIoT';
 let ae_name = 'FLIoT';
 
 ae = {
@@ -54,12 +56,12 @@ var count = 0;
 cnt_arr = [
     {
         parent: '/' + cse.name + '/' + ae.name,
-        name: 'attacks1',
-    },
-    {
-        parent: '/' + cse.name + '/' + ae.name,
         name: 'metrics1',
     },
+    // {
+    //     parent: '/' + cse.name + '/' + ae.name,
+    //     name: 'metrics2',
+    // },
     // {
     //     parent: '/' + cse.name + '/' + ae.name,
     //     name: 'metrics2',
@@ -72,10 +74,18 @@ cnt_arr = [
     //     parent: '/' + cse.name + '/' + ae.name,
     //     name: 'results2',
     // },
+    // {
+    //     parent: '/' + cse.name + '/' + ae.name,
+    //     name: 'results2',
+    // },
     {
         parent: '/' + cse.name + '/' + ae.name,
         name: 'client1FromC',
     },
+    // {
+    //     parent: '/' + cse.name + '/' + ae.name,
+    //     name: 'client2FromC',
+    // },
     // {
     //     parent: '/' + cse.name + '/' + ae.name,
     //     name: 'client2FromC',
@@ -88,11 +98,17 @@ cnt_arr = [
     //     parent: '/' + cse.name + '/' + ae.name,
     //     name: 'client2FromS',
     // },
+    {
+        parent: '/' + cse.name + '/' + ae.name,
+        name: 'attacks1',
+    },
 ];
 
 // build sub
 sub_arr = [
     {
+        parent: '/' + cse.name + '/' + ae.name + '/' + 'client1FromS',
+        name: 'client1FromS',
         parent: '/' + cse.name + '/' + ae.name + '/' + 'client1FromS',
         name: 'client1FromS',
         nu: 'mqtt://' + cse.host + ':' + cse.mqttport + '/' + ae.id + '?ct=json', // 'http:/' + ip.address() + ':' + ae.port + '/noti?ct=json',
@@ -106,6 +122,7 @@ let tas = {
     },
 
     connection: {
+        host: 'mobius',
         host: 'mobius',
         port: 1883,
         endpoint: '',
@@ -155,7 +172,6 @@ let makeConnection = (clientCount) => {
     getDataTopic['metrics' + clientCount] = '/thyme/metrics' + clientCount;
     getDataTopic['results' + clientCount] = '/thyme/results' + clientCount;
     getDataTopic['attacks' + clientCount] = '/thyme/attacks' + clientCount;
-
     setDataTopic[clientId + 'FromS'] = '/' + clientId + 'FromS/set';
 
     // conf.cnt.push(
