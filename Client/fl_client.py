@@ -59,7 +59,19 @@ import tensorflow as tf
 import resource  # 메모리 측정을 위한 리소스 모듈 임포트
 
 print("now is {}".format(datetime.datetime.today()))
-datasource= gen_train_valid_data()
+datasource = gen_train_valid_data(benign_only=True)
+# datasource가 6개의 항목으로 구성됨: X_train, y_train, X_test, y_test, orig_y_train, orig_y_test
+data_to_save = {
+    "X_train": datasource[0].tolist(),
+    "y_train": datasource[1].tolist(),
+    "X_test": datasource[2].tolist(),
+    "y_test": datasource[3].tolist(),
+    "original_y_train": datasource[4].tolist(),
+    "original_y_test": datasource[5].tolist()
+}
+
+with open("datasource.json", "w") as f:
+    json.dump(data_to_save, f, indent=4)
 import threading
 import signal
 import sys
@@ -76,7 +88,7 @@ class LocalModel(object):
     def __init__(self, model_config, data_collected):
         self.model_config = model_config
         self.model = model_from_json(model_config['model_json'])
-        self.x_train, self.y_train, self.x_test, self.y_test = data_collected
+        self.x_train, self.y_train, self.x_test, self.y_test, self.original_y_train, self.original_y_test = data_collected
 
     def get_weights(self):
         return self.model.get_weights()
@@ -145,9 +157,10 @@ class LocalModel(object):
 
 class FederatedClient(object):
     MAX_DATASET_SIZE_KEPT = 1200
-    def __init__(self, server_host, server_port, datasource):
-        self.local_model = None
+    def __init__(self, server_host, server_port, datasource, benign_train_only=True):
+        self.benign_train_only = benign_train_only
         self.datasource = datasource
+        self.local_model = None
         self.stop_training = False
         self.file_end = False
         self.tcp_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -325,6 +338,16 @@ class FederatedClient(object):
         model_config = args[0]
         print("Init message received:", model_config)
         
+        # 모델 및 데이터셋 초기화
+        self.local_model = LocalModel(model_config, self.datasource)
+        
+        if self.benign_train_only:
+            # benign label(0) 데이터만 사용하도록 확인 및 추가 필터링
+            indices = np.where(self.local_model.y_train == 0)[0]
+            self.local_model.x_train = self.local_model.x_train[indices]
+            self.local_model.y_train = self.local_model.y_train[indices]
+            print("benign_train_only 플래그 활성화: benign 데이터만 학습에 사용합니다.")
+        
         # model_json을 json 형식으로 변환하여 저장: 문자열을 딕셔너리로 변환
         try:
             model_config_converted = model_config.copy()
@@ -332,9 +355,6 @@ class FederatedClient(object):
         except Exception as e:
             print("model_json 변환 오류:", e)
             model_config_converted = model_config
-        
-        # 모델 및 설정 초기화
-        self.local_model = LocalModel(model_config, self.datasource)
         
         # 모델 구성 정보(예, 에폭, 배치 사이즈, model_json 등)를 최초 실행 폴더에 저장 (한 번만 저장)
         config_file = os.path.join(self.execution_folder, "model_config.json")
@@ -347,8 +367,7 @@ class FederatedClient(object):
         FL_ready = json.dumps({
             'event': 'client_ready',
             'payload': {
-                'train_size': self.local_model.x_train.shape[0],
-                # 'class_distr': my_class_distr  # for debugging, not needed in practice
+                'train_size': self.local_model.x_train.shape[0]
             }
         })
         self.send_tcp_message(header, FL_ready)
