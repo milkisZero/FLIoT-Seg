@@ -541,14 +541,8 @@ class FederatedClient(object):
 
     def on_classify_packet(self, payload):
         """
-        이 메서드는 수신된 패킷 정보를 이용해 학습된 모델로 예측을 진행하고,
+        수신된 패킷 정보를 이용해 학습된 모델로 예측을 진행하고,
         예측한 라벨과 실제 라벨(true_label)이 일치하는지 판별합니다.
-        
-        payload 예시:
-        {
-            "packet": [0.1, 0.5, ...],   # 패킷 정보 (특징 데이터 리스트)
-            "true_label": "nomaly" 또는 "anomaly"  # 실제 라벨
-        }
         """
         if self.local_model is None:
             print("로컬 모델이 초기화되지 않았습니다. 먼저 모델을 초기화해주세요.")
@@ -584,7 +578,7 @@ class FederatedClient(object):
             result = "anomaly" if error > threshold else "nomaly"
             
             # 예측 결과와 실제 라벨 비교
-            is_correct = result == true_label
+            is_correct = result == ("anomaly" if true_label != "BENIGN" else "nomaly")
             
             # 통계 초기화 (필요한 경우)
             if not hasattr(self, 'classification_stats'):
@@ -592,37 +586,54 @@ class FederatedClient(object):
                     'nomaly_correct_predictions': 0, 
                     'anomaly_correct_predictions': 0,
                     'nomaly_incorrect_predictions': 0,
-                    'anomaly_incorrect_predictions': 0
+                    'anomaly_incorrect_predictions': 0,
+                    'label_stats': {}
                 }
             
             # 통계 업데이트
             if is_correct:
-                if true_label == 'nomaly':
+                if result == 'nomaly':
                     self.classification_stats['nomaly_correct_predictions'] += 1
                 else:
                     self.classification_stats['anomaly_correct_predictions'] += 1
             else:
-                if true_label == 'nomaly':
+                if result == 'nomaly':
                     self.classification_stats['nomaly_incorrect_predictions'] += 1
                 else:
                     self.classification_stats['anomaly_incorrect_predictions'] += 1
+            
+            # 원본 라벨에 대한 통계 업데이트
+            if true_label not in self.classification_stats['label_stats']:
+                self.classification_stats['label_stats'][true_label] = {'correct': 0, 'incorrect': {}, 'total': 0}
+            
+            self.classification_stats['label_stats'][true_label]['total'] += 1
+            
+            if is_correct:
+                self.classification_stats['label_stats'][true_label]['correct'] += 1
+            else:
+                if result not in self.classification_stats['label_stats'][true_label]['incorrect']:
+                    self.classification_stats['label_stats'][true_label]['incorrect'][result] = 0
+                self.classification_stats['label_stats'][true_label]['incorrect'][result] += 1
 
             # 요청한 형식으로 결과 출력
-            print(f"\n패킷 분류 결과:")
-            print(f"  실제 라벨 (매핑 후): {true_label}")
-            print(f"  예측 라벨 (nomaly/anomaly): {result}")
-            print(f"  재구성 오차: {error:.6f}")
-            print(f"  임계값 (99번째 백분위수): {threshold:.6f}")
+            print("\n[패킷 분류 결과]")
+            print(f"  - 실제 라벨: {true_label}")
+            print(f"  - 예측 라벨 (nomaly/anomaly): {result}")
+            print(f"  - 재구성 오차: {error:.6f}")
+            print(f"  - 임계값 (99번째 백분위수): {threshold:.6f}")
             
-            print(f"\n누적 예측 결과:")
-            print(f"  nomaly 정답 개수: {self.classification_stats['nomaly_correct_predictions']}")
-            print(f"  nomaly 오답 개수: {self.classification_stats['nomaly_incorrect_predictions']}")
-            print(f"  anomaly 정답 개수: {self.classification_stats['anomaly_correct_predictions']}")
-            print(f"  anomaly 오답 개수: {self.classification_stats['anomaly_incorrect_predictions']}")
-            
-            # 정답률 계산 (소수점 둘째 자리까지)
-            accuracy = self.classification_stats['correct'] / self.classification_stats['total'] * 100
-            print(f"  전체 정답률: {accuracy:.2f}%")
+            # 각 라벨별로 올바르게 예측한 것과 실패한 개수 및 비율 출력
+            print("\n[라벨별 예측 결과]")
+            for label, stats in self.classification_stats['label_stats'].items():
+                total = stats['total']
+                correct = stats['correct']
+                incorrect_total = sum(stats['incorrect'].values())
+                correct_ratio = (correct / total) * 100 if total > 0 else 0
+                incorrect_ratio = (incorrect_total / total) * 100 if total > 0 else 0
+                print(f"\n라벨: {label}")
+                print(f"  - 총 개수: {total}")
+                print(f"  - 정답 개수: {correct} ({correct_ratio:.2f}%)")
+                print(f"  - 오답 개수: {incorrect_total} ({incorrect_ratio:.2f}%)")
             
         except Exception as e:
             print("분류 중 오류 발생:", e)
@@ -644,7 +655,21 @@ class FederatedClient(object):
             # 문자열을 전송
             self.send_tcp_message(header, message_json)
             self.file_end = True
-            print("파일 종료 메시지 수신 및 처리 완료")
+            
+            # 원본 라벨에 대한 잘못된 분류 결과 출력
+            print("\n[원본 라벨에 대한 분류 결과]")
+            for label, stats in self.classification_stats['label_stats'].items():
+                total = stats['total']
+                correct = stats['correct']
+                incorrect_total = sum(stats['incorrect'].values())
+                correct_ratio = (correct / total) * 100 if total > 0 else 0
+                incorrect_ratio = (incorrect_total / total) * 100 if total > 0 else 0
+                print(f"\n라벨: {label}")
+                print(f"  - 총 개수: {total}")
+                print(f"  - 정답 개수: {correct} ({correct_ratio:.2f}%)")
+                print(f"  - 오답 개수: {incorrect_total} ({incorrect_ratio:.2f}%)")
+            
+            print("[파일 종료 메시지 수신 및 처리 완료]")
         except Exception as e:
             print("파일 종료 처리 중 오류 발생:", e)
 

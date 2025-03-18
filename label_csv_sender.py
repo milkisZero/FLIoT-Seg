@@ -175,9 +175,8 @@ def main():
             print("\n데이터 전처리를 시작합니다...")
             X, class_labels, binary_labels, original_labels = preprocess_data(df)
             processed_df = pd.DataFrame(X)
-            # BENIGN은 nomaly로, 나머지는 anomaly로 변환
-            nomaly_anomaly_labels = ["nomaly" if str(label).strip().upper() == "BENIGN" else "anomaly" for label in original_labels]
-            processed_df["Label"] = nomaly_anomaly_labels
+            # 원래 라벨을 그대로 사용
+            processed_df["Label"] = original_labels  # 원래 라벨을 그대로 사용
             df = processed_df
             print("데이터 전처리가 완료되었습니다.")
         except Exception as e:
