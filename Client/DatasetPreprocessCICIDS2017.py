@@ -156,9 +156,13 @@ def main():
     # --- End of Added Section ---
 
     selected_idx_str = os.getenv("LABEL", "").strip()
-    print(f"Selected index string: {selected_idx_str}")
-    if not selected_idx_str:
-        selected_idx_str = input("\nEnter the index(es) of the label types to keep (space separated, e.g., 0 2): ")
+    if(selected_idx_str == "ALL"):
+        selected_indices = list(range(len(unique_labels)))
+        selected_labels = unique_labels
+    else:
+        print(f"Selected index string: {selected_idx_str}")
+        if not selected_idx_str:
+            selected_idx_str = input("\nEnter the index(es) of the label types to keep (space separated, e.g., 0 2): ")
     try:
         selected_indices = [int(x.strip()) for x in selected_idx_str.split()]
         selected_labels = [unique_labels[i] for i in selected_indices]
