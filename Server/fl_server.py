@@ -29,7 +29,7 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.models import Sequential, Model, load_model
 from tensorflow.keras.layers import (
-    Input, Dense, Dropout, Flatten, LeakyReLU
+    Input, Dense, Dropout, Flatten, LeakyReLU, Conv1D, BatchNormalization, MaxPooling1D
 )
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import backend as K
@@ -71,6 +71,10 @@ PUB_CNT_List = []
 
 HOST = "server"
 PORT = 5011
+
+with open("config.json", "r") as f:
+    config = json.load(f)
+num_classes = config["num_classes"]
 
 class GlobalModel(object):#类文档字符串
     """docstring for GlobalModel"""
@@ -143,34 +147,27 @@ class GlobalModel_CICIDS(GlobalModel):
         super(GlobalModel_CICIDS, self).__init__()
 
     def build_model(self):
-        input_img = Input(shape=(78,))
+        model = Sequential()
+        model.add(Conv1D(64, kernel_size=7, activation='relu', input_shape=(78, 1)))
+        model.add(BatchNormalization())
+        model.add(MaxPooling1D(pool_size=2))
         
-        # Encoder
-        encoded = Dense(128, activation='relu', kernel_initializer='he_uniform')(input_img)
-        encoded = Dropout(0.2)(encoded)
+        model.add(Conv1D(64, kernel_size=3, activation='relu'))
+        model.add(BatchNormalization())
+        model.add(MaxPooling1D(pool_size=2))
         
-        encoded = Dense(64, activation='relu')(encoded)
-        encoded = Dropout(0.2)(encoded)
+        model.add(Conv1D(64, kernel_size=3, activation='relu'))
+        model.add(BatchNormalization())
+        model.add(MaxPooling1D(pool_size=2))
         
-        # Bottleneck
-        bottleneck = Dense(32, activation='relu', name='bottleneck')(encoded)
-        
-        # Decoder
-        decoded = Dense(64, activation='relu')(bottleneck)
-        decoded = Dropout(0.2)(decoded)
-        
-        decoded = Dense(128, activation='relu')(decoded)
-        decoded = Dropout(0.2)(decoded)
-        
-        # Output
-        output = Dense(78, activation='sigmoid')(decoded)
-        
-        # Model
-        model = Model(inputs=input_img, outputs=output)
+        model.add(Flatten())
+        model.add(Dense(64, activation='relu'))
+        model.add(Dense(64, activation='relu'))
+        model.add(Dense(num_classes, activation='softmax'))
         
         optimizer = Adam(learning_rate=0.001)
         model.compile(
-            loss='mean_squared_error',
+            loss='categorical_crossentropy',
             optimizer=optimizer,
             metrics=['accuracy']
         )
@@ -180,7 +177,7 @@ class GlobalModel_CICIDS(GlobalModel):
 
 class FLServer(object):
     MIN_NUM_WORKERS = 2#最少节点数量设置
-    MAx_NUM_ROUNDS = 50#设定联邦循环次数
+    MAx_NUM_ROUNDS = 10#设定联邦循环次数
     NUM_CLIENTS_CONTACTED_PER_ROUND = 2#设置节点数量，作用，多少比例的掉队。
     ROUNDS_BETWEEN_VALIDATIONS = 2
     WINDOW_SIZE = 2
@@ -192,7 +189,7 @@ class FLServer(object):
       
         #####
         # training states
-        self.current_round = -1  # -1 for not yet started
+        self.current_round = 0  # -1 for not yet started
         self.current_round_client_updates = []
         self.eval_client_updates = []
         #####
@@ -459,6 +456,7 @@ class FLServer(object):
                 'payload': {
                     'model_json': self.global_model.model.to_json(),
                     'model_id': self.model_id,
+                    'num_classes': num_classes,
 
                     #'data_split': (0.6, 0.3, 0.1), # train, test, valid
                     'epoch_per_round': 1,
@@ -479,6 +477,7 @@ class FLServer(object):
             data={
                 'event': 'global_update',
                 'payload': {
+                    'num_classes': num_classes,
                     'model_json': self.global_model.model.to_json(),
                     'model_id': self.model_id,
                     'current_weights': obj_to_pickle_string(self.global_model.current_weights),
@@ -491,7 +490,7 @@ class FLServer(object):
             ############ Delete if occurs error #############
             #################################################
 
-            if len(self.ready_client_sids) >= FLServer.MIN_NUM_WORKERS and self.current_round == -1:
+            if len(self.ready_client_sids) >= FLServer.MIN_NUM_WORKERS and self.current_round == 0:
                 self.train_next_round()
                 
         elif event == 'client_update':
@@ -581,6 +580,7 @@ class FLServer(object):
             data = {
                 'event': 'global_update',
                 'payload': {
+                    'num_classes': num_classes,
                     'model_json': self.global_model.model.to_json(),
                     'model_id': self.model_id,
                     'current_weights': obj_to_pickle_string(self.global_model.current_weights),
@@ -624,6 +624,7 @@ class FLServer(object):
         #################################################
         ############ Delete if occurs error #############
         #################################################
+
 
     def stop_and_eval(self):
         #self.global_model.save("global_model.h5")

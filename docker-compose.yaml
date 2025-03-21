@@ -66,6 +66,7 @@ services:
         ipv4_address: 172.20.0.2
     volumes:
       - ./Server/fl_server.py:/app/fl_server.py
+      - ./Server/config.json:/app/config.json
     depends_on:
       mobius:
         condition: service_healthy

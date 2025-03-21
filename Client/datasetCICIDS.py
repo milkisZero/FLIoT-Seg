@@ -3,10 +3,11 @@
 
 import numpy as np
 import pandas as pd
+import json
 from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.utils import to_categorical
 
-
-def gen_train_valid_data(benign_only=False):
+def gen_train_valid_data(num_classes, benign_only=False):
     # Read the client_1 train and test files.
     training_df = pd.read_csv("CICIDS_Splitted/client_train.csv")
     testing_df = pd.read_csv("CICIDS_Splitted/client_test.csv")
@@ -86,7 +87,6 @@ def gen_train_valid_data(benign_only=False):
     X_train = x.values
     x_test, y_test = testing_df, testing_df.pop("Class").values
     X_test = x_test.values
-
     # Create binary labels:
     # We assume that "BENIGN" corresponds to 0 and any other label ("Attack") to 1.
     y_train = np.ones(len(y), np.int8)
@@ -95,8 +95,17 @@ def gen_train_valid_data(benign_only=False):
     y_test_binary = np.ones(len(y_test), np.int8)
     y_test_binary[np.where(y_test == "BENIGN")] = 0
 
+    # 추가: 라벨을 one-hot 인코딩합니다.
+    # 모델의 출력이 3개 노드이므로 num_classes=3으로 설정합니다.
+    y_train = to_categorical(y_train, num_classes=num_classes)
+    y_test_binary = to_categorical(y_test_binary, num_classes=num_classes)
+    
+    # 모델 입력 형태에 맞게 데이터 재구조화: 각 샘플을 (특성 수, 1)로 reshape
+    X_train = X_train.reshape((-1, len(train_cols), 1))
+    X_test = X_test.reshape((-1, len(train_cols), 1))
+    
     if benign_only:
-        indices = np.where(y_train == 0)[0]
+        indices = np.where(y_train[:, 0] == 1)[0]  # BENIGN 데이터는 one-hot에서 첫번째 인덱스가 1
         return X_train[indices], y_train[indices], X_test, y_test_binary, orig_y_train[indices], orig_y_test
     else:
         return X_train, y_train, X_test, y_test_binary, orig_y_train, orig_y_test

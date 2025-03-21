@@ -57,24 +57,16 @@ import struct
 from tensorflow.keras.optimizers import RMSprop
 import tensorflow as tf
 import resource  # 메모리 측정을 위한 리소스 모듈 임포트
+from tensorflow.keras.utils import to_categorical
 
 print("now is {}".format(datetime.datetime.today()))
-datasource = gen_train_valid_data(benign_only=False)
-# datasource가 6개의 항목으로 구성됨: X_train, y_train, X_test, y_test, orig_y_train, orig_y_test
-data_to_save = {
-    "X_train": datasource[0].tolist(),
-    "y_train": datasource[1].tolist(),
-    "X_test": datasource[2].tolist(),
-    "y_test": datasource[3].tolist(),
-    "original_y_train": datasource[4].tolist(),
-    "original_y_test": datasource[5].tolist()
-}
-
-with open("datasource.json", "w") as f:
-    json.dump(data_to_save, f, indent=4)
 import threading
 import signal
 import sys
+
+num_classes=0
+
+benign_only = False
 
 # TCP client settings
 if os.environ.get('CLIENT') is not None:
@@ -85,10 +77,14 @@ else:
     TCP_SERVER_PORT = 3105
 
 class LocalModel(object):
-    def __init__(self, model_config, data_collected):
+    def __init__(self, model_config, num_classes):
         self.model_config = model_config
         self.model = model_from_json(model_config['model_json'])
-        self.x_train, self.y_train, self.x_test, self.y_test, self.original_y_train, self.original_y_test = data_collected
+        datasource = gen_train_valid_data(num_classes)
+        self.x_train, self.y_train, self.x_test, self.y_test, self.original_y_train, self.original_y_test = datasource
+        self.anomaly_threshold = None
+        
+        # 라벨은 이미 원-핫 인코딩된 상태로 전달됨
 
     def get_weights(self):
         return self.model.get_weights()
@@ -99,14 +95,16 @@ class LocalModel(object):
     # return final weights, train loss, train accuracy
     def train_one_round(self):
         start_time = time.time()
-        self.model.compile(loss=keras.losses.mean_squared_error,
-                           optimizer=RMSprop(),
-                           metrics=['accuracy'])
+        self.model.compile(
+            loss='categorical_crossentropy',  # 손실 함수 변경
+            optimizer=RMSprop(),  # 옵티마이저 변경 가능
+            metrics=['accuracy']
+        )
         self.loss = self.model.fit(
-            self.x_train, self.x_train,
+            self.x_train, self.y_train,  # y_train으로 변경
             epochs=self.model_config['epoch_per_round'],
             batch_size=self.model_config['batch_size'],
-            validation_data=(self.x_test, self.x_test),
+            validation_data=(self.x_test, self.y_test),  # y_test로 변경
             verbose=2
         )
         end_time = time.time()
@@ -129,24 +127,24 @@ class LocalModel(object):
                 losses[i] = np.mean(np.square(preds[i] - x[i]))
             return losses
 
-        # Always compute threshold using the current training set predictions.
         print("Computing threshold from training data predictions...")
         train_preds = self.model.predict(self.x_train, batch_size=16, verbose=1)
-        train_losses = calculate_losses(self.x_train, train_preds)
-        # Changed threshold percentile from 90 to 99 for better anomaly separation.
-        threshold = np.percentile(train_losses, 99)
-        print("Computed threshold:", threshold)
+        train_anomaly_scores = calculate_losses(self.x_train, train_preds)
+        self.anomaly_threshold = np.percentile(train_anomaly_scores, 99)
+        print("Computed threshold:", self.anomaly_threshold)
 
         testing_set_predictions = self.model.predict(self.x_test, verbose=1)
-        test_losses = calculate_losses(self.x_test, testing_set_predictions)
+        test_anomaly_scores = calculate_losses(self.x_test, testing_set_predictions)
 
-        # Generate binary anomaly predictions.
-        binary_predictions = np.zeros(len(test_losses))
-        binary_predictions[test_losses > threshold] = 1
+        # 이진 장애 탐지를 위한 임계값 적용
+        binary_predictions = np.zeros(len(test_anomaly_scores))
+        binary_predictions[test_anomaly_scores > self.anomaly_threshold] = 1
 
-        precision = precision_score(self.y_test, binary_predictions)
-        recall = recall_score(self.y_test, binary_predictions)
-        f1 = f1_score(self.y_test, binary_predictions)
+        # 추가: 원-핫 인코딩된 y_test를 이진 값으로 변환 (예: benign=0, 이상치=1)
+        true_labels = np.argmax(self.y_test, axis=1)
+        precision = precision_score(true_labels, binary_predictions)
+        recall = recall_score(true_labels, binary_predictions)
+        f1 = f1_score(true_labels, binary_predictions)
         print("Performance over the testing data set:")
         print("  Recall: {:.16f}, Precision: {:.16f}, F1: {:.16f}".format(recall, precision, f1))
         return f1, precision, recall
@@ -157,9 +155,8 @@ class LocalModel(object):
 
 class FederatedClient(object):
     MAX_DATASET_SIZE_KEPT = 1200
-    def __init__(self, server_host, server_port, datasource, benign_train_only=True):
+    def __init__(self, server_host, server_port, benign_train_only=benign_only):
         self.benign_train_only = benign_train_only
-        self.datasource = datasource
         self.local_model = None
         self.stop_training = False
         self.file_end = False
@@ -180,9 +177,9 @@ class FederatedClient(object):
         print(f"데이터가 저장될 폴더: {self.execution_folder}")
 
         # 지속적인 테스트 평가를 위한 쓰레드 실행
-        self.test_interval = 60
-        self.testing_thread = threading.Thread(target=self.continuous_testing, daemon=True)
-        self.testing_thread.start()
+        # self.test_interval = 60
+        # self.testing_thread = threading.Thread(target=self.continuous_testing, daemon=True)
+        # self.testing_thread.start()
 
         # 공격자 클라이언트의 연결을 받을 소켓 설정 (예: 포트 4000 사용)
         self.setup_attacker_listener(attacker_port=4000)
@@ -232,6 +229,7 @@ class FederatedClient(object):
                     # 지정된 길이만큼의 데이터를 읽어들임
                     json_message = self.recv_exactly_from(attacker_conn, message_length)
                     message_data = json.loads(json_message)
+                    
                     header = message_data['header']
                     message = message_data['message']
                     
@@ -337,9 +335,10 @@ class FederatedClient(object):
     def on_init(self, *args):
         model_config = args[0]
         print("Init message received:", model_config)
-        
+        global num_classes
+        num_classes = model_config['num_classes']
         # 모델 및 데이터셋 초기화
-        self.local_model = LocalModel(model_config, self.datasource)
+        self.local_model = LocalModel(model_config, num_classes)
         
         if self.benign_train_only:
             # benign label(0) 데이터만 사용하도록 확인 및 추가 필터링
@@ -385,6 +384,8 @@ class FederatedClient(object):
     def on_global_update(self, *args):
         req = args[0]
         print("global update requested")
+        global num_classes
+        num_classes = req['num_classes']
 
         self.local_model.model = model_from_json(req['model_json'])
         if req['weights_format'] == 'pickle':
@@ -539,11 +540,23 @@ class FederatedClient(object):
         if (random.random() < p):
             time.sleep(random.randint(low, high))
 
+    # 저장된 모델을 불러오는 함수 추가
+    def load_saved_model(self):
+        import os
+        from tensorflow.keras.models import load_model
+        model_path = "saved_model.h5"
+        if os.path.exists(model_path):
+            print("저장된 모델을 불러옵니다:", model_path)
+            self.local_model.model = load_model(model_path)
+        else:
+            print("저장된 모델이 없습니다. 모델을 먼저 학습시키고 저장해주세요.")
+
     def on_classify_packet(self, payload):
         """
         수신된 패킷 정보를 이용해 학습된 모델로 예측을 진행하고,
         예측한 라벨과 실제 라벨(true_label)이 일치하는지 판별합니다.
         """
+        global num_classes
         if self.local_model is None:
             print("로컬 모델이 초기화되지 않았습니다. 먼저 모델을 초기화해주세요.")
             return
@@ -557,25 +570,35 @@ class FederatedClient(object):
             if packet_array.ndim == 1:
                 packet_array = np.expand_dims(packet_array, axis=0)
             
-            # 모델 예측(재구성) 수행
+            # 모델의 입력 차원에 맞게 reshape
+            packet_array = packet_array.reshape((-1, 78, 1))
+            
+            # 모델 예측 수행
             prediction = self.local_model.model.predict(packet_array, verbose=0)
             
-            # 재구성 오차 (Mean Squared Error) 계산
-            error = np.mean(np.square(packet_array - prediction))
+            # benign 클래스의 인덱스 결정: 학습 데이터 y_train에서 한 열의 합이 가장 큰 인덱스를 benign로 간주
+            if prediction.shape[1] == num_classes:
+                benign_index = int(np.argmax(np.sum(self.local_model.y_train, axis=0)))
+                error = 1 - prediction[0, benign_index]
+            else:
+                error = np.mean(np.square(packet_array - prediction))
             
-            # 임계값(threshold) 확인 - self.local_model.threshold 사용
-            if not hasattr(self.local_model, 'threshold'):
-                # threshold가 없는 경우 처음 한 번만 계산
-                print("임계값 없음, 임계값 계산 중...")
+            # 임계값(threshold) 확인 - self.local_model.anomaly_threshold 사용
+            if not hasattr(self.local_model, 'anomaly_threshold') or self.local_model.anomaly_threshold is None:
+                print("임계값 없음 또는 None, 임계값 계산 중...")
                 train_preds = self.local_model.model.predict(self.local_model.x_train, batch_size=16, verbose=0)
-                train_losses = np.mean(np.square(self.local_model.x_train - train_preds), axis=1)
-                self.local_model.threshold = np.percentile(train_losses, 99)
-                print(f"임계값 계산 완료: {self.local_model.threshold:.6f}")
+                if train_preds.shape[1] == num_classes:
+                    benign_index = int(np.argmax(np.sum(self.local_model.y_train, axis=0)))
+                    train_anomaly_scores = 1 - train_preds[:, benign_index]
+                else:
+                    train_anomaly_scores = np.mean(np.square(self.local_model.x_train - train_preds), axis=1)
+                self.local_model.anomaly_threshold = np.percentile(train_anomaly_scores, 99)
+                print(f"임계값 계산 완료: {self.local_model.anomaly_threshold:.6f}")
             
-            threshold = self.local_model.threshold
+            anomaly_threshold = self.local_model.anomaly_threshold
             
             # nomaly/anomaly 분류
-            result = "anomaly" if error > threshold else "nomaly"
+            result = "anomaly" if error >= anomaly_threshold else "nomaly"
             
             # 예측 결과와 실제 라벨 비교
             is_correct = result == ("anomaly" if true_label != "BENIGN" else "nomaly")
@@ -619,8 +642,8 @@ class FederatedClient(object):
             print("\n[패킷 분류 결과]")
             print(f"  - 실제 라벨: {true_label}")
             print(f"  - 예측 라벨 (nomaly/anomaly): {result}")
-            print(f"  - 재구성 오차: {error:.6f}")
-            print(f"  - 임계값 (99번째 백분위수): {threshold:.6f}")
+            print(f"  - 에러값: {error:.6f}")
+            print(f"  - 임계값 (99번째 백분위수): {anomaly_threshold:.6f}")
             
             # 각 라벨별로 올바르게 예측한 것과 실패한 개수 및 비율 출력
             print("\n[라벨별 예측 결과]")
@@ -675,4 +698,4 @@ class FederatedClient(object):
 
 if __name__ == "__main__":
     time_start = time.time()
-    FederatedClient(TCP_SERVER_IP, TCP_SERVER_PORT, datasource)
+    FederatedClient(TCP_SERVER_IP, TCP_SERVER_PORT)
