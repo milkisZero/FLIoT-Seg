@@ -176,28 +176,97 @@ def main():
     df_filtered = df_all[df_all[label_col].isin(selected_labels)]
     print(f"Total rows after filtering: {len(df_filtered)}")
 
-    # 추가: 사용자가 사용할 패킷 수를 입력받고, 선택된 라벨들의 비율을 유지하며 샘플링 수행
-    total_packets_str = os.getenv("TOTAL_PACKETS", "").strip()
-    if not total_packets_str:
-        total_packets_str = input("사용할 전체 패킷 수를 입력하세요: ")
-
+    # 추가: 사용자가 사용할 BENIGN_PACKET 및 ATTACK_PACKET 수를 입력받고, 각 라벨별로 샘플링 수행
+    benign_packets_str = os.getenv("BENIGN_PACKETS", "").strip()
+    if not benign_packets_str:
+        benign_packets_str = input("사용할 BENIGN PACKET 수를 입력하세요: ")
     try:
-        total_packets = int(total_packets_str)
+        benign_packets = int(benign_packets_str)
     except ValueError:
-        print("유효한 정수를 입력하세요. 전체 데이터를 사용합니다.")
-        total_packets = len(df_filtered)
+        print("유효한 정수를 입력하세요. 전체 BENIGN 데이터를 사용합니다.")
+        benign_packets = None  # 이후 실제 available 값 활용
 
-    # 각 라벨별 비율에 따라 샘플 개수를 결정 후 샘플링
-    df_sampled_list = []
+    attack_packets_str = os.getenv("ATTACK_PACKETS", "").strip()
+    if not attack_packets_str:
+        attack_packets_str = input("사용할 ATTACK PACKET 수를 입력하세요: ")
+    try:
+        attack_packets = int(attack_packets_str)
+    except ValueError:
+        print("유효한 정수를 입력하세요. 전체 ATTACK 데이터를 사용합니다.")
+        attack_packets = None
+
+    # 그룹 나누기: 라벨별로 데이터프레임 생성
     grouped = df_filtered.groupby(label_col)
-    for label, group in grouped:
-        ratio = len(group) / len(df_filtered)
-        n_samples = int(round(ratio * total_packets))
-        # 그룹의 샘플 수가 그룹 크기를 초과하지 않도록 처리
-        if n_samples > len(group):
-            n_samples = len(group)
-        group_sample = group.sample(n=n_samples, random_state=42)
-        df_sampled_list.append(group_sample)
+    groups = {label: group for label, group in grouped}
+    available = {label: len(group) for label, group in groups.items()}
+
+    df_sampled_list = []
+
+    # BENIGN 처리: BENIGN 라벨이 존재하면 BENIGN_PACKETS 값 적용
+    if "BENIGN" in groups:
+        avail_benign = available["BENIGN"]
+        if benign_packets is None or benign_packets > avail_benign:
+            benign_sample_count = avail_benign
+        else:
+            benign_sample_count = benign_packets
+        benign_sample = groups["BENIGN"].sample(n=benign_sample_count, random_state=42)
+        df_sampled_list.append(benign_sample)
+    else:
+        print("BENIGN 라벨이 존재하지 않습니다.")
+
+    # ATTACK 처리: BENIGN 이외의 라벨 모두 공격 라벨로 간주
+    attack_labels = [label for label in groups if label != "BENIGN"]
+    if attack_labels:
+        attack_groups = {label: groups[label] for label in attack_labels}
+        available_attack = {label: available[label] for label, group in attack_groups.items()}
+        total_available_attack = sum(available_attack.values())
+        if attack_packets is None or attack_packets > total_available_attack:
+            attack_packets = total_available_attack
+
+        # water filling 알고리즘을 사용하여 공격 라벨별 샘플 수 할당
+        allocation_attack = {}
+        pending = list(attack_groups.keys())
+        leftover = attack_packets
+
+        while pending:
+            fair_share = leftover / len(pending)
+            removed_any = False
+            for label in pending.copy():
+                if available_attack[label] <= fair_share:
+                    allocation_attack[label] = available_attack[label]
+                    leftover -= available_attack[label]
+                    pending.remove(label)
+                    removed_any = True
+            if not removed_any:
+                for label in pending:
+                    allocation_attack[label] = int(round(fair_share))
+                break
+
+        allocated_sum = sum(allocation_attack.values())
+        diff = attack_packets - allocated_sum
+        if diff != 0:
+            sorted_labels = sorted(allocation_attack.keys(), key=lambda x: available_attack[x], reverse=True)
+            idx = 0
+            while diff != 0 and idx < len(sorted_labels):
+                label = sorted_labels[idx]
+                if diff > 0:
+                    addition = min(diff, available_attack[label] - allocation_attack[label])
+                    allocation_attack[label] += addition
+                    diff -= addition
+                else:
+                    subtraction = min(-diff, allocation_attack[label])
+                    allocation_attack[label] -= subtraction
+                    diff += subtraction
+                idx = (idx + 1) % len(sorted_labels)
+
+        for label, group in attack_groups.items():
+            n_samples = allocation_attack[label]
+            if n_samples > len(group):
+                n_samples = len(group)
+            group_sample = group.sample(n=n_samples, random_state=42)
+            df_sampled_list.append(group_sample)
+    else:
+        print("공격(ATTACK) 라벨이 존재하지 않습니다.")
 
     df_filtered = pd.concat(df_sampled_list).reset_index(drop=True)
     print(f"샘플링 후 총 {len(df_filtered)}개의 패킷이 선택되었습니다.")
@@ -305,6 +374,18 @@ def main():
     splitting_info_lines.append(f"Shuffle Intensity: {shuffle_intensity}")
     splitting_info_lines.append("")
 
+    # 추가: 전체 데이터셋 갯수 출력 (BENIGN과 ATTACKS 구분)
+    splitting_info_lines.append("모든 데이터셋:")
+    total_samples = len(df_filtered)
+    sampled_counts = df_filtered[label_col].value_counts()
+    benign_count = sampled_counts.get("BENIGN", 0)
+    attack_count = total_samples - benign_count
+    benign_percentage = 100 * benign_count / total_samples if total_samples else 0
+    attack_percentage = 100 * attack_count / total_samples if total_samples else 0
+    splitting_info_lines.append(f"    BENIGN: {benign_count}개 ({benign_percentage:.1f}%)")
+    splitting_info_lines.append(f"    ATTACKS: {attack_count}개 ({attack_percentage:.1f}%)")
+    splitting_info_lines.append("")
+
     # List to hold distribution information for all clients.
     distribution_data = []
 
@@ -343,6 +424,19 @@ def main():
         splitting_info_lines.append(f"    Testing rows: {len(test_df)}")
         splitting_info_lines.append(
             f"    CSV files: {os.path.basename(train_filename)}, {os.path.basename(test_filename)}")
+
+        # 추가: 각 클라이언트의 라벨 분포 (카운트 및 비율) 출력
+        total_train = len(train_df)
+        splitting_info_lines.append("    Training label distribution:")
+        for label, count in train_counts.items():
+            percentage = (count / total_train) * 100 if total_train > 0 else 0
+            splitting_info_lines.append(f"         {label}: {count} ({percentage:.1f}%)")
+        total_test = len(test_df)
+        splitting_info_lines.append("    Testing label distribution:")
+        for label, count in test_counts.items():
+            percentage = (count / total_test) * 100 if total_test > 0 else 0
+            splitting_info_lines.append(f"         {label}: {count} ({percentage:.1f}%)")
+        
         splitting_info_lines.append("")
 
     # 12. Create one combined distribution plot for all clients.

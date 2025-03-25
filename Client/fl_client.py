@@ -65,7 +65,7 @@ import signal
 import sys
 
 num_classes=0
-
+selected_labels=[]
 benign_only = False
 
 # TCP client settings
@@ -77,10 +77,10 @@ else:
     TCP_SERVER_PORT = 3105
 
 class LocalModel(object):
-    def __init__(self, model_config, num_classes):
+    def __init__(self, model_config, num_classes, selected_labels):
         self.model_config = model_config
         self.model = model_from_json(model_config['model_json'])
-        datasource = gen_train_valid_data(num_classes)
+        datasource = gen_train_valid_data(num_classes, selected_labels=selected_labels)
         self.x_train, self.y_train, self.x_test, self.y_test, self.original_y_train, self.original_y_test = datasource
         self.anomaly_threshold = None
         
@@ -140,11 +140,23 @@ class LocalModel(object):
         binary_predictions = np.zeros(len(test_anomaly_scores))
         binary_predictions[test_anomaly_scores > self.anomaly_threshold] = 1
 
-        # 추가: 원-핫 인코딩된 y_test를 이진 값으로 변환 (예: benign=0, 이상치=1)
+        # 원-핫 인코딩된 y_test를 이진 값으로 변환 (예: BENIGN이면 0, 그 외는 1)
         true_labels = np.argmax(self.y_test, axis=1)
-        precision = precision_score(true_labels, binary_predictions)
-        recall = recall_score(true_labels, binary_predictions)
-        f1 = f1_score(true_labels, binary_predictions)
+
+        # selected_labels 전역 변수를 사용하여 BENIGN의 인덱스를 찾아 benign_index로 설정
+        benign_index = 0
+        if selected_labels:
+            for idx, lab in enumerate(selected_labels):
+                if lab.upper() == "BENIGN":
+                    benign_index = idx
+                    break
+
+        # BENIGN 클래스(benign_index) 외의 값은 모두 1(attack)로 매핑
+        binary_true_labels = np.where(true_labels == benign_index, 0, 1)
+
+        precision = precision_score(binary_true_labels, binary_predictions, average='binary')
+        recall = recall_score(binary_true_labels, binary_predictions, average='binary')
+        f1 = f1_score(binary_true_labels, binary_predictions, average='binary')
         print("Performance over the testing data set:")
         print("  Recall: {:.16f}, Precision: {:.16f}, F1: {:.16f}".format(recall, precision, f1))
         return f1, precision, recall
@@ -174,12 +186,19 @@ class FederatedClient(object):
         self.execution_folder = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         if not os.path.exists(self.execution_folder):
             os.makedirs(self.execution_folder)
+        
+        # 최초 실행 시간을 기준으로 JSON 파일 생성
+        device = "gpu" if tf.config.list_physical_devices("GPU") and os.environ.get("CUDA_VISIBLE_DEVICES", "") != "" else "cpu"
+        self.json_file_name = os.path.join("results", device, f"{self.execution_folder}.json")
+        if not os.path.exists(os.path.dirname(self.json_file_name)):
+            os.makedirs(os.path.dirname(self.json_file_name))
+        
+        # JSON 파일 초기화
+        with open(self.json_file_name, "w") as f:
+            json.dump([], f, indent=4)
+        
         print(f"데이터가 저장될 폴더: {self.execution_folder}")
-
-        # 지속적인 테스트 평가를 위한 쓰레드 실행
-        # self.test_interval = 60
-        # self.testing_thread = threading.Thread(target=self.continuous_testing, daemon=True)
-        # self.testing_thread.start()
+        print(f"JSON 파일이 생성되었습니다: {self.json_file_name}")
 
         # 공격자 클라이언트의 연결을 받을 소켓 설정 (예: 포트 4000 사용)
         self.setup_attacker_listener(attacker_port=4000)
@@ -335,10 +354,11 @@ class FederatedClient(object):
     def on_init(self, *args):
         model_config = args[0]
         print("Init message received:", model_config)
-        global num_classes
+        global num_classes, selected_labels
         num_classes = model_config['num_classes']
+        selected_labels = model_config['selected_labels']
         # 모델 및 데이터셋 초기화
-        self.local_model = LocalModel(model_config, num_classes)
+        self.local_model = LocalModel(model_config, num_classes, selected_labels)
         
         if self.benign_train_only:
             # benign label(0) 데이터만 사용하도록 확인 및 추가 필터링
@@ -396,37 +416,28 @@ class FederatedClient(object):
     def save_round_time(self, round_number, train_time, peak_memory):
         """
         각 라운드의 학습 시간, 최고 메모리 사용량, 라운드 번호, 그리고 실행 장치(CPU 또는 GPU)를
-        프로그램 최초 실행 시간으로 생성된 폴더 내의 JSON 파일에 저장합니다.
-        파일명은 사용 장치에 따라 "cpu_round_times.json" 또는 "gpu_round_times.json"으로 생성됩니다.
+        최초 실행 시간에 기반한 JSON 파일에 저장합니다.
         """
-        folder = self.execution_folder
-        # 사용 장치 판별: CUDA_VISIBLE_DEVICES가 설정되어 있고, GPU 목록이 존재하면 GPU, 아니라면 CPU
-        device = "gpu" if tf.config.list_physical_devices("GPU") and os.environ.get("CUDA_VISIBLE_DEVICES", "") != "" else "cpu"
-        file_name = os.path.join(folder, f"{device}_round_times.json")
-
-        # 기존 데이터 있으면 불러오기
-        if os.path.exists(file_name):
-            with open(file_name, "r") as f:
-                try:
-                    data = json.load(f)
-                except Exception as e:
-                    print("JSON 파일 로드 오류:", e)
-                    data = []
-        else:
-            data = []
+        # 기존 데이터 불러오기
+        with open(self.json_file_name, "r") as f:
+            try:
+                data = json.load(f)
+            except Exception as e:
+                print("JSON 파일 로드 오류:", e)
+                data = []
 
         # 새 데이터를 추가
         data.append({
             "round_number": round_number,
             "train_time": train_time,
             "peak_memory": peak_memory,
-            "device": device
+            "device": "gpu" if tf.config.list_physical_devices("GPU") and os.environ.get("CUDA_VISIBLE_DEVICES", "") != "" else "cpu"
         })
 
         # 파일에 저장
-        with open(file_name, "w") as f:
+        with open(self.json_file_name, "w") as f:
             json.dump(data, f, indent=4)
-        print(f"Round {round_number} 학습 시간 {train_time:.4f}초, 최고 메모리 사용량 {peak_memory:.2f} MB (장치: {device})가 {file_name} 에 저장되었습니다.")
+        print(f"Round {round_number} 학습 시간 {train_time:.4f}초, 최고 메모리 사용량 {peak_memory:.2f} MB가 {self.json_file_name} 에 저장되었습니다.")
 
     def on_request_update(self, *args):
         req = args[0]
@@ -552,58 +563,40 @@ class FederatedClient(object):
             print("저장된 모델이 없습니다. 모델을 먼저 학습시키고 저장해주세요.")
 
     def on_classify_packet(self, payload):
-        """
-        수신된 패킷 정보를 이용해 학습된 모델로 예측을 진행하고,
-        예측한 라벨과 실제 라벨(true_label)이 일치하는지 판별합니다.
-        """
-        global num_classes
+        global num_classes, selected_labels
         if self.local_model is None:
             print("로컬 모델이 초기화되지 않았습니다. 먼저 모델을 초기화해주세요.")
             return
         try:
-            # 수신된 데이터 확인
             packet = payload.get("packet")
             true_label = payload.get("true_label")
             
-            # 패킷 데이터를 numpy 배열로 변환 (모델 입력 크기에 맞게 reshape)
             packet_array = np.array(packet)
             if packet_array.ndim == 1:
                 packet_array = np.expand_dims(packet_array, axis=0)
-            
-            # 모델의 입력 차원에 맞게 reshape
             packet_array = packet_array.reshape((-1, 78, 1))
             
-            # 모델 예측 수행
-            prediction = self.local_model.model.predict(packet_array, verbose=0)
+            prediction = self.local_model.model.predict(packet_array, verbose=1)
+            print(f"Prediction: {prediction}")
+            predicted_idx = np.argmax(prediction, axis=1)[0]
+            print(f"Predicted index: {predicted_idx}")
             
-            # benign 클래스의 인덱스 결정: 학습 데이터 y_train에서 한 열의 합이 가장 큰 인덱스를 benign로 간주
-            if prediction.shape[1] == num_classes:
-                benign_index = int(np.argmax(np.sum(self.local_model.y_train, axis=0)))
-                error = 1 - prediction[0, benign_index]
-            else:
-                error = np.mean(np.square(packet_array - prediction))
-            
-            # 임계값(threshold) 확인 - self.local_model.anomaly_threshold 사용
-            if not hasattr(self.local_model, 'anomaly_threshold') or self.local_model.anomaly_threshold is None:
-                print("임계값 없음 또는 None, 임계값 계산 중...")
-                train_preds = self.local_model.model.predict(self.local_model.x_train, batch_size=16, verbose=0)
-                if train_preds.shape[1] == num_classes:
-                    benign_index = int(np.argmax(np.sum(self.local_model.y_train, axis=0)))
-                    train_anomaly_scores = 1 - train_preds[:, benign_index]
+            class_mapping = {}
+            for i, label in enumerate(selected_labels):
+                if label.upper() == "BENIGN":
+                    class_mapping[i] = "BENIGN"
                 else:
-                    train_anomaly_scores = np.mean(np.square(self.local_model.x_train - train_preds), axis=1)
-                self.local_model.anomaly_threshold = np.percentile(train_anomaly_scores, 99)
-                print(f"임계값 계산 완료: {self.local_model.anomaly_threshold:.6f}")
+                    class_mapping[i] = "Attack"
+            predicted_label = class_mapping.get(predicted_idx, "Unknown")
             
-            anomaly_threshold = self.local_model.anomaly_threshold
+            result = "nomaly" if predicted_label == "BENIGN" else "anomaly"
+            is_correct = (predicted_label == true_label) or (true_label.upper() != "BENIGN" and predicted_label == "Attack")
             
-            # nomaly/anomaly 분류
-            result = "anomaly" if error >= anomaly_threshold else "nomaly"
+            print("\n[패킷 분류 결과]")
+            print(f"  - 실제 라벨: {true_label}")
+            print(f"  - 예측 라벨: {selected_labels[predicted_idx]}")
+            print(f"  - 분류 결과 (nomaly/anomaly): {result}")
             
-            # 예측 결과와 실제 라벨 비교
-            is_correct = result == ("anomaly" if true_label != "BENIGN" else "nomaly")
-            
-            # 통계 초기화 (필요한 경우)
             if not hasattr(self, 'classification_stats'):
                 self.classification_stats = {
                     'nomaly_correct_predictions': 0, 
@@ -613,39 +606,25 @@ class FederatedClient(object):
                     'label_stats': {}
                 }
             
-            # 통계 업데이트
+            if true_label not in self.classification_stats['label_stats']:
+                self.classification_stats['label_stats'][true_label] = {'correct': 0, 'incorrect': {}, 'total': 0, 'correct_but_different': {}}
+            
+            self.classification_stats['label_stats'][true_label]['total'] += 1
             if is_correct:
-                if result == 'nomaly':
-                    self.classification_stats['nomaly_correct_predictions'] += 1
-                else:
-                    self.classification_stats['anomaly_correct_predictions'] += 1
+                self.classification_stats['label_stats'][true_label]['correct'] += 1
+                if predicted_label != true_label:
+                    if selected_labels[predicted_idx] not in self.classification_stats['label_stats'][true_label]['correct_but_different']:
+                        self.classification_stats['label_stats'][true_label]['correct_but_different'][selected_labels[predicted_idx]] = 0
+                    self.classification_stats['label_stats'][true_label]['correct_but_different'][selected_labels[predicted_idx]] += 1
             else:
                 if result == 'nomaly':
                     self.classification_stats['nomaly_incorrect_predictions'] += 1
                 else:
                     self.classification_stats['anomaly_incorrect_predictions'] += 1
+                if selected_labels[predicted_idx] not in self.classification_stats['label_stats'][true_label]['incorrect']:
+                    self.classification_stats['label_stats'][true_label]['incorrect'][selected_labels[predicted_idx]] = 0
+                self.classification_stats['label_stats'][true_label]['incorrect'][selected_labels[predicted_idx]] += 1
             
-            # 원본 라벨에 대한 통계 업데이트
-            if true_label not in self.classification_stats['label_stats']:
-                self.classification_stats['label_stats'][true_label] = {'correct': 0, 'incorrect': {}, 'total': 0}
-            
-            self.classification_stats['label_stats'][true_label]['total'] += 1
-            
-            if is_correct:
-                self.classification_stats['label_stats'][true_label]['correct'] += 1
-            else:
-                if result not in self.classification_stats['label_stats'][true_label]['incorrect']:
-                    self.classification_stats['label_stats'][true_label]['incorrect'][result] = 0
-                self.classification_stats['label_stats'][true_label]['incorrect'][result] += 1
-
-            # 요청한 형식으로 결과 출력
-            print("\n[패킷 분류 결과]")
-            print(f"  - 실제 라벨: {true_label}")
-            print(f"  - 예측 라벨 (nomaly/anomaly): {result}")
-            print(f"  - 에러값: {error:.6f}")
-            print(f"  - 임계값 (99번째 백분위수): {anomaly_threshold:.6f}")
-            
-            # 각 라벨별로 올바르게 예측한 것과 실패한 개수 및 비율 출력
             print("\n[라벨별 예측 결과]")
             for label, stats in self.classification_stats['label_stats'].items():
                 total = stats['total']
@@ -656,15 +635,18 @@ class FederatedClient(object):
                 print(f"\n라벨: {label}")
                 print(f"  - 총 개수: {total}")
                 print(f"  - 정답 개수: {correct} ({correct_ratio:.2f}%)")
+                for pred_label, count in stats['correct_but_different'].items():
+                    print(f"    - {pred_label}: {count} ({(count / total) * 100:.2f}%)")
                 print(f"  - 오답 개수: {incorrect_total} ({incorrect_ratio:.2f}%)")
-            
+                for pred_label, count in stats['incorrect'].items():
+                    print(f"    - {pred_label}: {count} ({(count / total) * 100:.2f}%)")
+        
         except Exception as e:
             print("분류 중 오류 발생:", e)
 
     def on_file_end(self):
         try:
             header = b'ATTACKS'
-            # 딕셔너리 키 이름 확인 (이전에 사용한 키 이름과 일치시킴)
             message = {
                 'nomaly_correct_predictions': self.classification_stats['nomaly_correct_predictions'],
                 'nomaly_incorrect_predictions': self.classification_stats['nomaly_incorrect_predictions'],
@@ -672,14 +654,10 @@ class FederatedClient(object):
                 'anomaly_incorrect_predictions': self.classification_stats['anomaly_incorrect_predictions']
             }
             
-            # 딕셔너리를 JSON 문자열로 변환
             message_json = json.dumps(message)
-            
-            # 문자열을 전송
             self.send_tcp_message(header, message_json)
             self.file_end = True
             
-            # 원본 라벨에 대한 잘못된 분류 결과 출력
             print("\n[원본 라벨에 대한 분류 결과]")
             for label, stats in self.classification_stats['label_stats'].items():
                 total = stats['total']
@@ -690,7 +668,11 @@ class FederatedClient(object):
                 print(f"\n라벨: {label}")
                 print(f"  - 총 개수: {total}")
                 print(f"  - 정답 개수: {correct} ({correct_ratio:.2f}%)")
+                for pred_label, count in stats['correct_but_different'].items():
+                    print(f"    - {pred_label}: {count} ({(count / total) * 100:.2f}%)")
                 print(f"  - 오답 개수: {incorrect_total} ({incorrect_ratio:.2f}%)")
+                for pred_label, count in stats['incorrect'].items():
+                    print(f"    - {pred_label}: {count} ({(count / total) * 100:.2f}%)")
             
             print("[파일 종료 메시지 수신 및 처리 완료]")
         except Exception as e:

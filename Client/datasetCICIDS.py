@@ -6,8 +6,9 @@ import pandas as pd
 import json
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.utils import to_categorical
+from sklearn.preprocessing import LabelEncoder
 
-def gen_train_valid_data(num_classes, benign_only=False):
+def gen_train_valid_data(num_classes, benign_only=False, selected_labels=None):
     # Read the client_1 train and test files.
     training_df = pd.read_csv("CICIDS_Splitted/client_train.csv")
     testing_df = pd.read_csv("CICIDS_Splitted/client_test.csv")
@@ -51,20 +52,26 @@ def gen_train_valid_data(num_classes, benign_only=False):
     training_df = training_df[train_cols + ["Label"]]
     testing_df = testing_df[test_cols + ["Label"]]
 
-    # Define a function to transform labels.
-    # We will create a new column "Class": if Label equals "BENIGN" (case insensitive) then Class = "BENIGN",
-    # otherwise, Class = "Attack".
-    def label_transform(row):
-        return "BENIGN" if str(row["Label"]).strip().upper() == "BENIGN" else "Attack"
+    # 선택한 라벨이 지정되어 있으면 해당 라벨만 필터링 (예: ["BENIGN", "DOS", "PROBE"] 등)
+    if selected_labels is not None:
+        training_df = training_df[training_df["Label"].isin(selected_labels)]
+        testing_df = testing_df[testing_df["Label"].isin(selected_labels)]
 
-    # Apply the transformation.
+    # 원본 라벨을 유지하면서 전처리: 모든 라벨을 그대로 사용 (대문자로)
+    def label_transform(row):
+        return str(row["Label"]).strip().upper()
+
     training_df["Class"] = training_df.apply(label_transform, axis=1)
     testing_df["Class"] = testing_df.apply(label_transform, axis=1)
     
-    # 원래 Label 보존 (이후 JSON 저장 시 활용)
+    # 원본 레이블 보존
     orig_y_train = training_df["Label"].values.copy()
     orig_y_test = testing_df["Label"].values.copy()
-
+    
+    # 전처리된 'Class' 컬럼에 들어있는 유니크 라벨들을 출력
+    print("Unique training labels:", training_df["Class"].unique())
+    print("Unique testing labels:", testing_df["Class"].unique())
+    
     # Drop the original Label column.
     training_df.drop("Label", axis=1, inplace=True)
     testing_df.drop("Label", axis=1, inplace=True)
@@ -87,18 +94,14 @@ def gen_train_valid_data(num_classes, benign_only=False):
     X_train = x.values
     x_test, y_test = testing_df, testing_df.pop("Class").values
     X_test = x_test.values
-    # Create binary labels:
-    # We assume that "BENIGN" corresponds to 0 and any other label ("Attack") to 1.
-    y_train = np.ones(len(y), np.int8)
-    y_train[np.where(y == "BENIGN")] = 0
 
-    y_test_binary = np.ones(len(y_test), np.int8)
-    y_test_binary[np.where(y_test == "BENIGN")] = 0
-
-    # 추가: 라벨을 one-hot 인코딩합니다.
-    # 모델의 출력이 3개 노드이므로 num_classes=3으로 설정합니다.
-    y_train = to_categorical(y_train, num_classes=num_classes)
-    y_test_binary = to_categorical(y_test_binary, num_classes=num_classes)
+    # 레이블 인코딩 및 원-핫 인코딩 (다중 분류)
+    le = LabelEncoder()
+    y_train_enc = le.fit_transform(y)
+    y_test_enc = le.transform(y_test)
+    num_classes = len(le.classes_)
+    y_train = to_categorical(y_train_enc, num_classes=num_classes)
+    y_test_binary = to_categorical(y_test_enc, num_classes=num_classes)
     
     # 모델 입력 형태에 맞게 데이터 재구조화: 각 샘플을 (특성 수, 1)로 reshape
     X_train = X_train.reshape((-1, len(train_cols), 1))

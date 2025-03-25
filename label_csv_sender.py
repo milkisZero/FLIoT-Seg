@@ -37,45 +37,30 @@ def preprocess_data(input_df):
         'Idle Mean', 'Init_Win_bytes_forward', 'Subflow Fwd Packets', 'Total Length of Fwd Packets'
     ]
     
-    # 'Label' 컬럼 존재 확인
     if "Label" not in input_df.columns:
         raise ValueError("CSV 파일에 'Label' 컬럼이 존재하지 않습니다.")
     
-    # 존재하는 수치형 특성만 선택
     available_features = [col for col in numerical_features if col in input_df.columns]
     
-    # 필요한 컬럼만 선택 (수치형 특성 + Label)
-    df = input_df[available_features + ["Label"]].copy()
+    # 원본 레이블 복원용 변수 저장 (수정 전 그대로 보존)
+    original_labels = input_df["Label"].copy()
     
-    # 레이블 변환 함수: BENIGN -> nomaly, 나머지 -> anomaly
-    def label_transform(row):
-        return "nomaly" if str(row["Label"]).strip().upper() == "BENIGN" else "anomaly"
+    # 기존 'Label' 컬럼 제거 후, 필요한 전처리 진행 (단, 이진 변환 대신 원본 라벨 유지)
+    # 만약 전처리 목적이 단순 스케일링이면 그대로 진행
+    df = input_df[available_features].copy()
     
-    # 새로운 Class 컬럼 추가
-    df["Class"] = df.apply(label_transform, axis=1)
-    
-    # 원본 Label 컬럼 저장 (나중에 사용)
-    original_labels = df["Label"].copy()
-    
-    # 원본 Label 컬럼 제거
-    df.drop("Label", axis=1, inplace=True)
-    
-    # 수치형 특성 정규화 (MinMax 스케일링)
+    # 수치형 특성 정규화
     for col in available_features:
-        # 무한값을 NaN으로 변환
         df[col] = df[col].replace([np.inf, -np.inf], np.nan)
-        # NaN 값을 중앙값으로 채움
         df[col] = df[col].fillna(df[col].median())
-        # MinMax 스케일링 적용
         scaler = MinMaxScaler()
         df[col] = scaler.fit_transform(df[col].values.reshape(-1, 1))
     
-    # 이진 레이블 생성 (nomaly=0, anomaly=1)
-    binary_labels = np.ones(len(df), np.int8)
-    binary_labels[np.where(df["Class"] == "nomaly")] = 0
+    # 전처리된 데이터와 함께 원본 레이블을 그대로 추가 (원-핫 인코딩은 서버쪽에서 진행)
+    df["Label"] = original_labels
     
-    # 전처리된 데이터와 함께 원본 레이블도 반환
-    return df[available_features], df["Class"], binary_labels, original_labels
+    # binary_labels 대신 다중 클래스 처리를 위한 방식으로 변경할 수 있음
+    return df, original_labels
 
 def list_csv_files(directory):
     """지정된 디렉토리에 있는 모든 CSV 파일 목록을 반환"""
@@ -173,7 +158,7 @@ def main():
     if apply_preprocessing == "" or apply_preprocessing == "y":
         try:
             print("\n데이터 전처리를 시작합니다...")
-            X, class_labels, binary_labels, original_labels = preprocess_data(df)
+            X, original_labels = preprocess_data(df)
             processed_df = pd.DataFrame(X)
             # 원래 라벨을 그대로 사용
             processed_df["Label"] = original_labels  # 원래 라벨을 그대로 사용

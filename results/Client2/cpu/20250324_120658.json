@@ -1,0 +1,164 @@
+[
+    {
+        "round_number": 1,
+        "train_time": 3.5854804515838623,
+        "peak_memory": 667.984375,
+        "device": "cpu"
+    },
+    {
+        "round_number": 2,
+        "train_time": 4.585973739624023,
+        "peak_memory": 741.69921875,
+        "device": "cpu"
+    },
+    {
+        "round_number": 3,
+        "train_time": 3.308642864227295,
+        "peak_memory": 772.5546875,
+        "device": "cpu"
+    },
+    {
+        "round_number": 4,
+        "train_time": 3.5438666343688965,
+        "peak_memory": 772.5546875,
+        "device": "cpu"
+    },
+    {
+        "round_number": 5,
+        "train_time": 3.2622251510620117,
+        "peak_memory": 827.2734375,
+        "device": "cpu"
+    },
+    {
+        "round_number": 6,
+        "train_time": 3.533780336380005,
+        "peak_memory": 836.73046875,
+        "device": "cpu"
+    },
+    {
+        "round_number": 7,
+        "train_time": 3.3244364261627197,
+        "peak_memory": 860.0625,
+        "device": "cpu"
+    },
+    {
+        "round_number": 8,
+        "train_time": 3.5115983486175537,
+        "peak_memory": 860.0625,
+        "device": "cpu"
+    },
+    {
+        "round_number": 9,
+        "train_time": 3.202039957046509,
+        "peak_memory": 877.16015625,
+        "device": "cpu"
+    },
+    {
+        "round_number": 10,
+        "train_time": 3.6821682453155518,
+        "peak_memory": 877.16015625,
+        "device": "cpu"
+    },
+    {
+        "round_number": 11,
+        "train_time": 3.2123794555664062,
+        "peak_memory": 877.16015625,
+        "device": "cpu"
+    },
+    {
+        "round_number": 12,
+        "train_time": 3.4834089279174805,
+        "peak_memory": 877.16015625,
+        "device": "cpu"
+    },
+    {
+        "round_number": 13,
+        "train_time": 3.3372814655303955,
+        "peak_memory": 877.16015625,
+        "device": "cpu"
+    },
+    {
+        "round_number": 14,
+        "train_time": 3.65140962600708,
+        "peak_memory": 878.74609375,
+        "device": "cpu"
+    },
+    {
+        "round_number": 15,
+        "train_time": 3.226203680038452,
+        "peak_memory": 888.87109375,
+        "device": "cpu"
+    },
+    {
+        "round_number": 16,
+        "train_time": 3.4866538047790527,
+        "peak_memory": 888.87109375,
+        "device": "cpu"
+    },
+    {
+        "round_number": 17,
+        "train_time": 3.448160171508789,
+        "peak_memory": 888.87109375,
+        "device": "cpu"
+    },
+    {
+        "round_number": 18,
+        "train_time": 3.516669511795044,
+        "peak_memory": 895.11328125,
+        "device": "cpu"
+    },
+    {
+        "round_number": 19,
+        "train_time": 3.1841092109680176,
+        "peak_memory": 900.94140625,
+        "device": "cpu"
+    },
+    {
+        "round_number": 20,
+        "train_time": 3.476743459701538,
+        "peak_memory": 911.87109375,
+        "device": "cpu"
+    },
+    {
+        "round_number": 21,
+        "train_time": 3.2554266452789307,
+        "peak_memory": 911.87109375,
+        "device": "cpu"
+    },
+    {
+        "round_number": 22,
+        "train_time": 3.536238193511963,
+        "peak_memory": 911.87109375,
+        "device": "cpu"
+    },
+    {
+        "round_number": 23,
+        "train_time": 3.2274928092956543,
+        "peak_memory": 911.87109375,
+        "device": "cpu"
+    },
+    {
+        "round_number": 24,
+        "train_time": 3.7691242694854736,
+        "peak_memory": 911.87109375,
+        "device": "cpu"
+    },
+    {
+        "round_number": 25,
+        "train_time": 3.2550718784332275,
+        "peak_memory": 911.87109375,
+        "device": "cpu"
+    },
+    {
+        "round_number": 26,
+        "train_time": 3.4801459312438965,
+        "peak_memory": 911.87109375,
+        "device": "cpu"
+    },
+    {
+        "round_number": 27,
+        "train_time": 3.4411425590515137,
+        "peak_memory": 911.87109375,
+        "device": "cpu"
+    }
+]

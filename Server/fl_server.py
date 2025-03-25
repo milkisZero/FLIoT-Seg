@@ -74,7 +74,7 @@ PORT = 5011
 
 with open("config.json", "r") as f:
     config = json.load(f)
-num_classes = config["num_classes"]
+num_classes, selected_labels = config["num_classes"], config["selected_labels"]
 
 class GlobalModel(object):#类文档字符串
     """docstring for GlobalModel"""
@@ -177,7 +177,7 @@ class GlobalModel_CICIDS(GlobalModel):
 
 class FLServer(object):
     MIN_NUM_WORKERS = 2#最少节点数量设置
-    MAx_NUM_ROUNDS = 10#设定联邦循环次数
+    MAx_NUM_ROUNDS = 50#设定联邦循环次数
     NUM_CLIENTS_CONTACTED_PER_ROUND = 2#设置节点数量，作用，多少比例的掉队。
     ROUNDS_BETWEEN_VALIDATIONS = 2
     WINDOW_SIZE = 2
@@ -457,6 +457,7 @@ class FLServer(object):
                     'model_json': self.global_model.model.to_json(),
                     'model_id': self.model_id,
                     'num_classes': num_classes,
+                    'selected_labels': selected_labels,
 
                     #'data_split': (0.6, 0.3, 0.1), # train, test, valid
                     'epoch_per_round': 1,
@@ -478,6 +479,7 @@ class FLServer(object):
                 'event': 'global_update',
                 'payload': {
                     'num_classes': num_classes,
+                    'selected_labels': selected_labels,
                     'model_json': self.global_model.model.to_json(),
                     'model_id': self.model_id,
                     'current_weights': obj_to_pickle_string(self.global_model.current_weights),
@@ -581,6 +583,7 @@ class FLServer(object):
                 'event': 'global_update',
                 'payload': {
                     'num_classes': num_classes,
+                    'selected_labels': selected_labels,
                     'model_json': self.global_model.model.to_json(),
                     'model_id': self.model_id,
                     'current_weights': obj_to_pickle_string(self.global_model.current_weights),

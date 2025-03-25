@@ -15,6 +15,7 @@
       - ./Client/CICIDS_Splitted/client{NUM}_test.csv:/app/CICIDS_Splitted/client_test.csv
       - ./Client/datasetCICIDS.py:/app/datasetCICIDS.py
       - ./Client/fl_client.py:/app/fl_client.py
+      - ./results/Client{NUM}:/app/results
     ports:
       - {PORT}:4000
     depends_on:
