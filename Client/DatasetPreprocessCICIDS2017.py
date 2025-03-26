@@ -263,7 +263,7 @@ def main():
     if "BENIGN" in groups:
         avail_benign = available["BENIGN"]
         if benign_packets < 0:
-            benign_sample_count = max_attack_cnt * 2
+            benign_sample_count = int(max_attack_cnt * 2.5)
         elif benign_packets is None or benign_packets > avail_benign:
             benign_sample_count = avail_benign
         else:
@@ -404,11 +404,24 @@ def main():
     for i, client_df in enumerate(client_dataframes, start=1):
         # Shuffle client's data using the specified shuffle intensity.
         client_df = partial_shuffle_df(client_df, shuffle_intensity, random_state=42)
+
+        label_groups = client_df.groupby(' Label')
+        train_parts = []
+        test_parts = []
         n = len(client_df)
-        client_train_ratio = train_ratios[i - 1]
-        num_train = int(client_train_ratio * n)
-        train_df = client_df.iloc[:num_train]
-        test_df = client_df.iloc[num_train:]
+ 
+        for label, group in label_groups:
+            n_label = len(group)
+            num_train = int(train_ratios[i - 1] * n_label)
+            
+            train_part = group.iloc[:num_train]
+            test_part = group.iloc[num_train:]
+            
+            train_parts.append(train_part)
+            test_parts.append(test_part)
+
+        train_df = pd.concat(train_parts).reset_index(drop=True)
+        test_df = pd.concat(test_parts).reset_index(drop=True)
 
         train_filename = os.path.join(output_folder, f"client{i}_train.csv")
         test_filename = os.path.join(output_folder, f"client{i}_test.csv")
