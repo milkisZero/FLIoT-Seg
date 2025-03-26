@@ -201,18 +201,7 @@ def main():
     available = {label: len(group) for label, group in groups.items()}
 
     df_sampled_list = []
-
-    # BENIGN 처리: BENIGN 라벨이 존재하면 BENIGN_PACKETS 값 적용
-    if "BENIGN" in groups:
-        avail_benign = available["BENIGN"]
-        if benign_packets is None or benign_packets > avail_benign:
-            benign_sample_count = avail_benign
-        else:
-            benign_sample_count = benign_packets
-        benign_sample = groups["BENIGN"].sample(n=benign_sample_count, random_state=42)
-        df_sampled_list.append(benign_sample)
-    else:
-        print("BENIGN 라벨이 존재하지 않습니다.")
+    max_attack_cnt = 0;
 
     # ATTACK 처리: BENIGN 이외의 라벨 모두 공격 라벨로 간주
     attack_labels = [label for label in groups if label != "BENIGN"]
@@ -265,8 +254,24 @@ def main():
                 n_samples = len(group)
             group_sample = group.sample(n=n_samples, random_state=42)
             df_sampled_list.append(group_sample)
+        max_attack_label = max(allocation_attack, key=lambda k: allocation_attack[k])
+        max_attack_cnt = allocation_attack[max_attack_label]
     else:
         print("공격(ATTACK) 라벨이 존재하지 않습니다.")
+
+    # BENIGN 처리: BENIGN 라벨이 존재하면 BENIGN_PACKETS 값 적용
+    if "BENIGN" in groups:
+        avail_benign = available["BENIGN"]
+        if benign_packets < 0:
+            benign_sample_count = max_attack_cnt * 2
+        elif benign_packets is None or benign_packets > avail_benign:
+            benign_sample_count = avail_benign
+        else:
+            benign_sample_count = benign_packets
+        benign_sample = groups["BENIGN"].sample(n=benign_sample_count, random_state=42)
+        df_sampled_list.append(benign_sample)
+    else:
+        print("BENIGN 라벨이 존재하지 않습니다.")
 
     df_filtered = pd.concat(df_sampled_list).reset_index(drop=True)
     print(f"샘플링 후 총 {len(df_filtered)}개의 패킷이 선택되었습니다.")
@@ -341,24 +346,44 @@ def main():
         print("Shuffle intensity must be between 0 and 1.")
         return
 
-    # 9. Shuffle the filtered dataset using the specified intensity.
-    df_filtered = partial_shuffle_df(df_filtered, shuffle_intensity, random_state=42)
-    total_rows = len(df_filtered)
+    # # 9. Shuffle the filtered dataset using the specified intensity.
+    # df_filtered = partial_shuffle_df(df_filtered, shuffle_intensity, random_state=42)
+    # total_rows = len(df_filtered)
 
     # 10. Divide the dataset among the clients.
-    client_dataframes = []
-    start_idx = 0
-    print("\nDividing the data among clients:")
-    for i in range(num_clients):
-        if i == num_clients - 1:
-            end_idx = total_rows
-        else:
-            num_rows = int(client_ratios[i] * total_rows)
-            end_idx = start_idx + num_rows
-        client_data = df_filtered.iloc[start_idx:end_idx].copy()
-        client_dataframes.append(client_data)
-        print(f"Assigned {len(client_data)} rows to client {i + 1}.")
-        start_idx = end_idx
+    # client_dataframes = []
+    # start_idx = 0
+    # print("\nDividing the data among clients:")
+    # for i in range(num_clients):
+    #     if i == num_clients - 1:
+    #         end_idx = total_rows
+    #     else:
+    #         num_rows = int(client_ratios[i] * total_rows)
+    #         end_idx = start_idx + num_rows
+    #     client_data = df_filtered.iloc[start_idx:end_idx].copy()
+    #     client_dataframes.append(client_data)
+    #     print(f"Assigned {len(client_data)} rows to client {i + 1}.")
+    #     start_idx = end_idx
+    
+    client_dataframes = [pd.DataFrame(columns=df_filtered.columns) for _ in range(num_clients)]
+    label_groups = df_filtered.groupby(' Label')
+
+    print("\nStratified splitting among clients:")
+    for label, group in label_groups:
+        total_label_rows = len(group)
+        start_idx = 0
+
+        for i in range(num_clients):
+            if i == num_clients - 1:
+                end_idx = total_label_rows
+            else:
+                num_rows = int(client_ratios[i] * total_label_rows)
+                end_idx = start_idx + num_rows
+
+            # 해당 클라이언트에 라벨 데이터를 할당
+            chunk = group.iloc[start_idx:end_idx]
+            client_dataframes[i] = pd.concat([client_dataframes[i], chunk], ignore_index=True)
+            start_idx = end_idx
 
     # Prepare to store splitting info for the final report.
     splitting_info_lines = []
