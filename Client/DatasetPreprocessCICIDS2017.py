@@ -347,30 +347,14 @@ def main():
         return
 
     # # 9. Shuffle the filtered dataset using the specified intensity.
-    # df_filtered = partial_shuffle_df(df_filtered, shuffle_intensity, random_state=42)
-    # total_rows = len(df_filtered)
-
     # 10. Divide the dataset among the clients.
-    # client_dataframes = []
-    # start_idx = 0
-    # print("\nDividing the data among clients:")
-    # for i in range(num_clients):
-    #     if i == num_clients - 1:
-    #         end_idx = total_rows
-    #     else:
-    #         num_rows = int(client_ratios[i] * total_rows)
-    #         end_idx = start_idx + num_rows
-    #     client_data = df_filtered.iloc[start_idx:end_idx].copy()
-    #     client_dataframes.append(client_data)
-    #     print(f"Assigned {len(client_data)} rows to client {i + 1}.")
-    #     start_idx = end_idx
-    
     client_dataframes = [pd.DataFrame(columns=df_filtered.columns) for _ in range(num_clients)]
     label_groups = df_filtered.groupby(' Label')
 
     print("\nStratified splitting among clients:")
     for label, group in label_groups:
         total_label_rows = len(group)
+        shuffled_group = partial_shuffle_df(group, shuffle_intensity, random_state=42)
         start_idx = 0
 
         for i in range(num_clients):
@@ -381,7 +365,7 @@ def main():
                 end_idx = start_idx + num_rows
 
             # 해당 클라이언트에 라벨 데이터를 할당
-            chunk = group.iloc[start_idx:end_idx]
+            chunk = shuffled_group.iloc[start_idx:end_idx]
             client_dataframes[i] = pd.concat([client_dataframes[i], chunk], ignore_index=True)
             start_idx = end_idx
 
