@@ -1,8 +1,0 @@
-{
-    "selected_labels": [
-        "BENIGN",
-        "DDoS",
-        "PortScan"
-    ],
-    "num_classes": 3
-}
