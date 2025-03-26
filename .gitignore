@@ -7,3 +7,5 @@ CICIDS_Splitted/
 CICIDS
 node_modules/
 *.csv
+Server/config.json
+results
