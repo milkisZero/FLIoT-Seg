@@ -171,11 +171,23 @@ def main():
         print("전처리 없이 원본 데이터를 사용합니다.")
         df["Label"] = df["Label"].apply(lambda x: "nomaly" if str(x).strip().upper() == "BENIGN" else "anomaly")
 
-    labels = df['Label'].unique()
+    selected_idx_str = os.getenv("LABEL", "").strip()
+    selected_indices = []
+    if selected_idx_str != "ALL":
+        print(f"Selected index string: {selected_idx_str}")
+        try:
+            selected_indices = [int(x.strip()) for x in selected_idx_str.split()]
+        except Exception as e:
+            print("Error processing the input. Make sure to enter valid indices separated by spaces.")
+            return
+    print(f"Selected label types: {selected_indices}")
+
+    labels = sorted(df['Label'].unique())
     print("\n존재하는 라벨 목록:")
     for i, label in enumerate(labels):
-        count = (df['Label'] == label).sum()
-        print(f"{i}: {label} ({count}개)")
+        if i in selected_indices:
+            count = (df['Label'] == label).sum()
+            print(f"{i}: {label} ({count}개)")
     
     if auto:
         selected_indexes_input = ""
@@ -184,7 +196,10 @@ def main():
         selected_indexes_input = input("\n추출할 라벨의 인덱스를 콤마(,)로 구분하여 선택하세요 (아무것도 입력하면 전체 라벨 선택): ").strip()
     
     if not selected_indexes_input:
-        selected_indexes = list(range(len(labels)))
+        if selected_indices:
+            selected_indexes = selected_indices
+        else :
+            selected_indexes = list(range(len(labels)))
     else:
         try:
             selected_indexes = [int(x.strip()) for x in selected_indexes_input.split(",") if x.strip() != ""]
