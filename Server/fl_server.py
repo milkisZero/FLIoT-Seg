@@ -29,7 +29,7 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.models import Sequential, Model, load_model
 from tensorflow.keras.layers import (
-    Input, Dense, Dropout, Flatten, LeakyReLU, Conv1D, BatchNormalization, MaxPooling1D
+    Input, Dense, Dropout, Flatten, LeakyReLU, Conv1D, BatchNormalization, MaxPooling1D, Activation, GlobalAveragePooling1D
 )
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import backend as K
@@ -148,21 +148,26 @@ class GlobalModel_CICIDS(GlobalModel):
 
     def build_model(self):
         model = Sequential()
-        model.add(Conv1D(64, kernel_size=7, activation='relu', input_shape=(78, 1)))
+        model.add(Conv1D(64, kernel_size=7, input_shape=(78, 1)))
         model.add(BatchNormalization())
+        model.add(Activation('relu'))
         model.add(MaxPooling1D(pool_size=2))
         
-        model.add(Conv1D(64, kernel_size=3, activation='relu'))
+        model.add(Conv1D(64, kernel_size=3))
         model.add(BatchNormalization())
+        model.add(Activation('relu'))
         model.add(MaxPooling1D(pool_size=2))
         
-        model.add(Conv1D(64, kernel_size=3, activation='relu'))
+        model.add(Conv1D(64, kernel_size=3))
         model.add(BatchNormalization())
+        model.add(Activation('relu'))
         model.add(MaxPooling1D(pool_size=2))
         
         model.add(Flatten())
         model.add(Dense(64, activation='relu'))
+        model.add(Dropout(0.3))  # 추가
         model.add(Dense(64, activation='relu'))
+        model.add(Dropout(0.3))  # 추가
         model.add(Dense(num_classes, activation='softmax'))
         
         optimizer = Adam(learning_rate=0.001)
@@ -177,7 +182,7 @@ class GlobalModel_CICIDS(GlobalModel):
 
 class FLServer(object):
     MIN_NUM_WORKERS = 2#最少节点数量设置
-    MAx_NUM_ROUNDS = 50#设定联邦循环次数
+    MAx_NUM_ROUNDS = 10#设定联邦循环次数
     NUM_CLIENTS_CONTACTED_PER_ROUND = 2#设置节点数量，作用，多少比例的掉队。
     ROUNDS_BETWEEN_VALIDATIONS = 2
     WINDOW_SIZE = 2

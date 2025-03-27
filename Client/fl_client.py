@@ -75,6 +75,8 @@ if os.environ.get('CLIENT') is not None:
 else:
     TCP_SERVER_IP = '192.168.0.10'  # 수신 라즈베리파이의 IP 주소
     TCP_SERVER_PORT = 3105
+    
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 
 class LocalModel(object):
     def __init__(self, model_config, num_classes, selected_labels):
@@ -93,7 +95,7 @@ class LocalModel(object):
         self.model.set_weights(new_weights)
 
     # return final weights, train loss, train accuracy
-    def train_one_round(self):
+    def train_one_round(self):        
         start_time = time.time()
         self.model.compile(
             loss='categorical_crossentropy',  # 손실 함수 변경

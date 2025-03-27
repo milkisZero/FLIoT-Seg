@@ -1,8 +1,20 @@
 {
     "selected_labels": [
         "BENIGN",
+        "Bot",
         "DDoS",
-        "PortScan"
+        "DoS GoldenEye",
+        "DoS Hulk",
+        "DoS Slowhttptest",
+        "DoS slowloris",
+        "FTP-Patator",
+        "Heartbleed",
+        "Infiltration",
+        "PortScan",
+        "SSH-Patator",
+        "Web Attack \ufffd Brute Force",
+        "Web Attack \ufffd Sql Injection",
+        "Web Attack \ufffd XSS"
     ],
-    "num_classes": 3
+    "num_classes": 15
 }
