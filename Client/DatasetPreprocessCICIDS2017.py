@@ -263,7 +263,7 @@ def main():
     if "BENIGN" in groups:
         avail_benign = available["BENIGN"]
         if benign_packets < 0:
-            benign_sample_count = int(max_attack_cnt * 2)
+            benign_sample_count = int(max_attack_cnt * 1.5)
         elif benign_packets is None or benign_packets > avail_benign:
             benign_sample_count = avail_benign
         else:
