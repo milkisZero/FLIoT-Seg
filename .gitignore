@@ -9,3 +9,5 @@ node_modules/
 *.csv
 Server/config.json
 results
+graphs
+docker-compose.yaml
