@@ -7,7 +7,7 @@
 - [시작하기](#시작하기)
   - [CICIDS2017 데이터셋 다운로드](#1-cicids2017-데이터셋-다운로드)
   - [환경 설정](#2-환경-설정)
-  - [클라이언트 실행](#3-클라이언트-실행)
+  - [실행](#3-실행)
   - [학습 메트릭 시각화](#4-학습-메트릭-시각화)
   - [공격자 패킷 구현](#5-공격자-패킷-구현)
 - [주요 컴포넌트](#주요-컴포넌트)
@@ -38,11 +38,11 @@ FLIoT
 
 ## 시작하기
 
-1. CICIDS2017 데이터셋 다운로드
+### 1. CICIDS2017 데이터셋 다운로드
    - [CICIDS2017 공식 다운로드 페이지](https://www.unb.ca/cic/datasets/ids-2017.html)에서 데이터셋을 다운로드
    - 다운로드한 CSV 파일들을 `Client/CICIDS/` 폴더에 저장
 
-2. 환경 설정
+### 2. 환경 설정
    ```bash
    # setup.sh 실행
    ./setup.sh
@@ -54,30 +54,37 @@ FLIoT
    - .env 파일의 설정을 기반으로 도커 네트워크 구성
    - DatasetPreprocessCICIDS2017.py를 자동으로 실행하여 Client/CICIDS_Splitted/ 폴더에 데이터셋 분할
 
-3. 클라이언트 실행
+### 3. 실행
    ```bash
    # 도커 컴포즈로 실행
    docker-compose up -d --build
    ```
    
-   docker-compose 명령어 파라미터 설명:
-   - `up`: 컨테이너를 생성하고 시작
-   - `-d`: 백그라운드에서 실행 (detached 모드)
-   - `--build`: 이미지를 다시 빌드 (코드 변경 시 필요)
+   실행 시 자동으로 수행되는 작업:
+   - 서버
+     - Mobius IoT 플랫폼 연결
+     - AE(AE) 감지 및 구독 설정
+     - 컨테이너(CNT) 구독 설정
+     - 글로벌 모델 초기화
+   - 클라이언트
+     - Gateway 서버와 TCP 소켓 통신
+     - 로컬 모델 학습 및 평가
+     - 실시간 패킷 분류
+     - 학습 결과 및 메트릭 전송
    
-   도커 종료 방법:
+   종료 방법:
    ```bash
    # 컨테이너와 볼륨 모두 제거
    docker-compose down -v
    ```
    
-   도커 실행 시 자동으로 생성되는 폴더:
+   실행 시 자동으로 생성되는 폴더:
    - `results/`: 각 클라이언트의 학습 결과와 메트릭이 저장되는 폴더
      - CPU/GPU 사용량
      - 학습 시간
      - 메모리 사용량 등의 정보가 JSON 형식으로 저장
 
-4. 학습 메트릭 시각화
+### 4. 학습 메트릭 시각화
    ```bash
    # 필요한 패키지 설치
    pip3 install matplotlib pandas numpy seaborn argparse
@@ -92,7 +99,7 @@ FLIoT
      - 학습 시간 그래프
      - 메모리 사용량 그래프가 PNG 형식으로 저장
 
-5. 공격자 패킷 구현
+### 5. 공격자 패킷 구현
    ```bash
    # 필요한 패키지 설치
    pip3 install pandas numpy scikit-learn python-dotenv
@@ -116,8 +123,42 @@ FLIoT
 ## 주요 컴포넌트
 
 - **Client**: 연합학습에 참여하는 개별 클라이언트 구현
+  - 서버와의 통신 처리
+    - Gateway 서버와 TCP 소켓 통신
+    - 모델 가중치 및 학습 결과 전송
+    - 실시간 학습 메트릭 전송 (loss, accuracy 등)
+    - Gateway를 통한 중앙 서버와의 통신
+  - 공격자 패킷 처리
+    - 공격자 클라이언트의 TCP 연결 수신
+    - 실시간 패킷 분류 및 결과 전송
+    - 분류 결과 통계 수집 및 전송
+  - 로컬 모델 학습
+    - TensorFlow/Keras 기반 딥러닝 모델
+    - GPU/CPU 자동 감지 및 설정
+    - 학습 메트릭 수집 (시간, 메모리 사용량)
+  - 모델 평가 및 분류
+    - 실시간 패킷 분류 (normal/anomaly)
+    - 분류 결과 통계 수집
+    - F1-score, Precision, Recall 계산
+  - 자동화된 기능
+    - 학습 결과 자동 저장 (JSON 형식)
+    - GPU 메모리 자동 관리
+    - 오류 복구 및 재연결
   - 자세한 내용은 [Client/README.md](Client/README.md) 참조
 - **Server**: 중앙 서버 구현
+  - Mobius IoT 플랫폼 연동
+    - AE(AE) 감지 및 구독 (aeWatcher)
+    - 컨테이너(CNT) 구독 및 관리
+    - 클라이언트와의 pub/sub 통신
+  - 연합학습 관리
+    - FedAvg 알고리즘 구현
+    - 글로벌 모델 가중치 집계
+    - 클라이언트 모델 업데이트
+  - 학습 메트릭 수집
+    - 손실 함수 값 및 정확도
+    - CPU/GPU 사용량
+    - 메모리 사용량
+  - 자세한 내용은 [Server/README.md](Server/README.md) 참조
 - **Mobius**: IoT 플랫폼 연동
   - `conf.json`: Mobius 서버 설정 파일
     - IP 주소 및 포트 설정
