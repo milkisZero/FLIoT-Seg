@@ -3,6 +3,7 @@
 이 프로젝트는 IoT 플랫폼을 이용한 사이버 공격 탐지 모델 연합학습(Federated Learning) 시스템입니다. CIC-IDS2017 데이터셋을 활용하여 분산된 클라이언트들 간의 협업 학습을 도커로 구현하여 누구나 쉽게 테스트 해 봄을 목적으로 합니다.
 
 ## 목차
+- [사전 설치 요구사항](#사전-설치-요구사항)
 - [프로젝트 구조](#프로젝트-구조)
 - [시작하기](#시작하기)
   - [CICIDS2017 데이터셋 다운로드](#1-cicids2017-데이터셋-다운로드)
@@ -13,6 +14,79 @@
 - [주요 컴포넌트](#주요-컴포넌트)
 - [유틸리티 도구](#유틸리티-도구)
 - [요구사항](#요구사항)
+
+## 사전 설치 요구사항
+
+### 1. Docker 설치
+```bash
+# Docker 설치 스크립트 다운로드 및 실행
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+
+# Docker 서비스 시작
+sudo systemctl start docker
+sudo systemctl enable docker
+
+# 현재 사용자를 docker 그룹에 추가 (sudo 없이 docker 명령어 실행 가능)
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+### 2. Docker Compose 설치
+```bash
+# Docker Compose 설치
+sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+
+# 설치 확인
+docker-compose --version
+```
+
+### 3. Python 환경 설정
+```bash
+# Python 3.7 이상 및 pip 설치
+sudo apt update
+sudo apt install -y python3 python3-pip
+
+# 가상환경 패키지 설치
+sudo apt install -y python3-venv
+
+# 가상환경 생성 및 활성화
+python3 -m venv venv
+source venv/bin/activate
+
+# 필요한 Python 패키지 설치
+pip install pandas numpy scikit-learn matplotlib seaborn python-dotenv tqdm
+
+# 또는 requirements.txt 파일로 한 번에 설치
+cat > requirements.txt << EOL
+pandas
+numpy
+scikit-learn
+matplotlib
+seaborn
+python-dotenv
+tqdm
+EOL
+
+pip install -r requirements.txt
+```
+
+### 4. Git 설치 및 프로젝트 클론
+```bash
+# Git 설치
+sudo apt install -y git
+
+# 프로젝트 클론
+git clone https://github.com/ansrudgh/FLIoT.git
+cd FLIoT
+```
+
+### 5. 실행 권한 설정
+```bash
+# 스크립트 파일에 실행 권한 부여
+chmod +x setup.sh
+```
 
 ## 프로젝트 구조
 
@@ -217,7 +291,7 @@ FLIoT
 - **Docker 환경**
   - Docker Engine 설치
   - Docker Compose 설치
-  - Docker 네트워크 설정 권한
+  - Docker 네트워크 설정 권장
 
 - **패키지 의존성**
   - 각 폴더의 `requirements.txt` 파일 참조
