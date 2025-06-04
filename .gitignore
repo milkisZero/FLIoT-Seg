@@ -11,3 +11,6 @@ Server/config.json
 results
 graphs
 docker-compose.yaml
+Client/build
+Client/dist
+*.spec
