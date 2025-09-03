@@ -71,7 +71,7 @@ done
 # 현재 스크립트 위치 기준으로 Client 폴더로 이동
 cd "$(dirname "$0")/Client" || { echo "Client 폴더로 이동 실패"; exit 1; }
 
-# Client 폴더 내부에서 DatasetPreprocessCICIDS2017.py 스크립트 실행
+# Client 폴더 내부에서 DatasetPreprocess.py 스크립트 실행
 python3 DatasetPreprocess.py "$CLIENT"
 
 echo "설정 완료: docker-compose.yaml 파일이 생성되었습니다."

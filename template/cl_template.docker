@@ -4,13 +4,15 @@
       dockerfile: Dockerfile
     env_file:
       - .env
-    gpus:
-      - count: all
-        capabilities: [gpu]
     environment:
       - PYTHONUNBUFFERED=1
-      - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    deploy:
+          resources:
+            reservations:
+              devices:
+                - driver: nvidia
+                  count: all
+                  capabilities: [gpu]
     container_name: federated_client{NUM}
     networks:
       federated_network:
