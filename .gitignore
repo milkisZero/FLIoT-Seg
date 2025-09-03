@@ -3,8 +3,8 @@ __pycache__/
 .vscode
 .DS_Store
 .env
-CICIDS_Splitted/
-CICIDS
+SYNTHIA_Splitted/
+SYNTHIA
 node_modules/
 *.csv
 Server/config.json

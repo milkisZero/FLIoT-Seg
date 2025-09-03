@@ -50,7 +50,7 @@ import codecs
 from keras.models import model_from_json
 from pickle_utils import obj_to_pickle_string, pickle_string_to_obj
 from sklearn.metrics import f1_score,precision_score,recall_score,accuracy_score,confusion_matrix,roc_curve,auc
-from datasetCICIDS import gen_train_valid_data
+from datasetCICIDS import load_synthia_dataset
 import datetime,time
 import socket
 import struct
@@ -82,12 +82,11 @@ class LocalModel(object):
     def __init__(self, model_config, num_classes, selected_labels):
         self.model_config = model_config
         self.model = model_from_json(model_config['model_json'])
-        datasource = gen_train_valid_data(num_classes, selected_labels=selected_labels)
-        self.x_train, self.y_train, self.x_test, self.y_test, self.original_y_train, self.original_y_test = datasource
+        
+        datasource = load_synthia_dataset(binary=False, object_classes=selected_labels)
+        self.x_train, self.y_train, self.x_test, self.y_test = datasource
         self.anomaly_threshold = None
         
-        # 라벨은 이미 원-핫 인코딩된 상태로 전달됨
-
     def get_weights(self):
         return self.model.get_weights()
 

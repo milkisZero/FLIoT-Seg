@@ -11,8 +11,8 @@
       federated_network:
         ipv4_address: {IP}
     volumes:
-      - ./Client/CICIDS_Splitted/client{NUM}_train.csv:/app/CICIDS_Splitted/client_train.csv
-      - ./Client/CICIDS_Splitted/client{NUM}_test.csv:/app/CICIDS_Splitted/client_test.csv
+      - ./Client/SYNTHIA_Splitted/client{NUM}/train:/app/SYNTHIA_Splitted/client/train
+      - ./Client/SYNTHIA_Splitted/client{NUM}/test:/app/SYNTHIA_Splitted/client/test
       - ./Client/datasetCICIDS.py:/app/datasetCICIDS.py
       - ./Client/fl_client.py:/app/fl_client.py
       - ./results/Client{NUM}:/app/results
