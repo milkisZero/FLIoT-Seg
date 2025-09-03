@@ -4,8 +4,13 @@
       dockerfile: Dockerfile
     env_file:
       - .env
+    gpus:
+      - count: all
+        capabilities: [gpu]
     environment:
       - PYTHONUNBUFFERED=1
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     container_name: federated_client{NUM}
     networks:
       federated_network:
@@ -13,7 +18,7 @@
     volumes:
       - ./Client/SYNTHIA_Splitted/client{NUM}/train:/app/SYNTHIA_Splitted/client/train
       - ./Client/SYNTHIA_Splitted/client{NUM}/test:/app/SYNTHIA_Splitted/client/test
-      - ./Client/datasetCICIDS.py:/app/datasetCICIDS.py
+      - ./Client/datasetLoader.py:/app/datasetLoader.py
       - ./Client/fl_client.py:/app/fl_client.py
       - ./results/Client{NUM}:/app/results
     ports:

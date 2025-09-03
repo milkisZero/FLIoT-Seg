@@ -41,8 +41,7 @@ BASE_FILE="template/base_compose.docker"
 
 # docker-compose.yaml 파일이 존재한다면, 이미 설정된 것으로 판단
 if [ -f "$COMPOSE_FILE" ]; then
-  echo "docker-compose.yaml 파일이 이미 존재합니다. 설정이 이미 완료된 상태입니다."
-  exit 0
+  rm docker-compose.yaml
 fi
 
 # 기본 네트워크와 서비스(서버, ncube)의 IP 계산

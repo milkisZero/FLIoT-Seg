@@ -7,9 +7,10 @@ import psutil
 import subprocess
 
 # Check available GPU list
-print("CLIENT: ", os.environ.get('CLIENT'))
 gpus = tf.config.list_physical_devices('GPU')
-if os.environ.get('CLIENT') is not None or not gpus:
+print(gpus)
+
+if not gpus:
     print("No available GPU. Use CPU.")
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
 else:
@@ -50,7 +51,7 @@ import codecs
 from keras.models import model_from_json
 from pickle_utils import obj_to_pickle_string, pickle_string_to_obj
 from sklearn.metrics import f1_score,precision_score,recall_score,accuracy_score,confusion_matrix,roc_curve,auc
-from datasetCICIDS import load_synthia_dataset
+from datasetLoader import load_synthia_dataset
 import datetime,time
 import socket
 import struct
@@ -202,9 +203,9 @@ class FederatedClient(object):
         print(f"JSON 파일이 생성되었습니다: {self.json_file_name}")
 
         # 공격자 클라이언트의 연결을 받을 소켓 설정 (예: 포트 4000 사용)
-        self.setup_attacker_listener(attacker_port=4000)
-        self.attacker_thread = threading.Thread(target=self.receive_attacker_messages, daemon=True)
-        self.attacker_thread.start()
+        # self.setup_attacker_listener(attacker_port=4000)
+        # self.attacker_thread = threading.Thread(target=self.receive_attacker_messages, daemon=True)
+        # self.attacker_thread.start()
 
         # 기존 TCP 메시지 수신 쓰레드 시작
         print("sent wakeup")
@@ -223,52 +224,52 @@ class FederatedClient(object):
             except RuntimeError as e:
                 print("GPU 메모리 증분 할당 설정 중 오류 발생:", e)
 
-    def setup_attacker_listener(self, attacker_port):
-        """공격자 클라이언트의 연결을 수신하기 위한 서버 소켓을 설정합니다."""
-        self.attacker_listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.attacker_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self.attacker_listener.bind(('', attacker_port))
-        self.attacker_listener.listen(5)
-        print(f"공격자 패킷 수신을 위한 포트({attacker_port})에서 대기 중입니다.")
+    # def setup_attacker_listener(self, attacker_port):
+    #     """공격자 클라이언트의 연결을 수신하기 위한 서버 소켓을 설정합니다."""
+    #     self.attacker_listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    #     self.attacker_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    #     self.attacker_listener.bind(('', attacker_port))
+    #     self.attacker_listener.listen(5)
+    #     print(f"공격자 패킷 수신을 위한 포트({attacker_port})에서 대기 중입니다.")
 
-    def receive_attacker_messages(self):
-        """공격자(attacker) 클라이언트의 메시지를 수신 및 처리합니다.
-        수신된 메시지는 'classify_packet' 이벤트로 처리되어,
-        on_classify_packet 함수를 호출합니다.
-        """
-        while True:
-            try:
-                attacker_conn, attacker_addr = self.attacker_listener.accept()
-                print("공격자 클라이언트 연결됨:", attacker_addr)
-                while True:
-                    # 먼저 4바이트 크기의 메시지 길이를 수신
-                    message_length_bytes = self.recv_exactly_from(attacker_conn, 4)
-                    message_length = int.from_bytes(message_length_bytes, byteorder='big')
-                    print("공격자 메시지 예상 길이:", message_length)
+    # def receive_attacker_messages(self):
+    #     """공격자(attacker) 클라이언트의 메시지를 수신 및 처리합니다.
+    #     수신된 메시지는 'classify_packet' 이벤트로 처리되어,
+    #     on_classify_packet 함수를 호출합니다.
+    #     """
+    #     while True:
+    #         try:
+    #             attacker_conn, attacker_addr = self.attacker_listener.accept()
+    #             print("공격자 클라이언트 연결됨:", attacker_addr)
+    #             while True:
+    #                 # 먼저 4바이트 크기의 메시지 길이를 수신
+    #                 message_length_bytes = self.recv_exactly_from(attacker_conn, 4)
+    #                 message_length = int.from_bytes(message_length_bytes, byteorder='big')
+    #                 print("공격자 메시지 예상 길이:", message_length)
                     
-                    # 지정된 길이만큼의 데이터를 읽어들임
-                    json_message = self.recv_exactly_from(attacker_conn, message_length)
-                    message_data = json.loads(json_message)
+    #                 # 지정된 길이만큼의 데이터를 읽어들임
+    #                 json_message = self.recv_exactly_from(attacker_conn, message_length)
+    #                 message_data = json.loads(json_message)
                     
-                    header = message_data['header']
-                    message = message_data['message']
+    #                 header = message_data['header']
+    #                 message = message_data['message']
                     
-                    # 공격자 클라이언트의 메시지 처리 로직을 여기에 구현합니다.
-                    self.handle_message(header, message)
-            except Exception as e:
-                if not self.file_end:
-                    print("공격자 메시지 수신 중 오류:", e)
-                    break
+    #                 # 공격자 클라이언트의 메시지 처리 로직을 여기에 구현합니다.
+    #                 self.handle_message(header, message)
+    #         except Exception as e:
+    #             if not self.file_end:
+    #                 print("공격자 메시지 수신 중 오류:", e)
+    #                 break
 
-    def recv_exactly_from(self, conn, size):
-        """특정 연결(conn)에서 정확히 size 바이트만큼 데이터 수신"""
-        data = b""
-        while len(data) < size:
-            chunk = conn.recv(size - len(data))
-            if not chunk:
-                raise ConnectionError("연결이 끊어졌습니다.")
-            data += chunk
-        return data
+    # def recv_exactly_from(self, conn, size):
+    #     """특정 연결(conn)에서 정확히 size 바이트만큼 데이터 수신"""
+    #     data = b""
+    #     while len(data) < size:
+    #         chunk = conn.recv(size - len(data))
+    #         if not chunk:
+    #             raise ConnectionError("연결이 끊어졌습니다.")
+    #         data += chunk
+    #     return data
 
     def continuous_testing(self):
         while not self.stop_training:
@@ -553,131 +554,131 @@ class FederatedClient(object):
             time.sleep(random.randint(low, high))
 
     # 저장된 모델을 불러오는 함수 추가
-    def load_saved_model(self):
-        import os
-        from tensorflow.keras.models import load_model
-        model_path = "saved_model.h5"
-        if os.path.exists(model_path):
-            print("저장된 모델을 불러옵니다:", model_path)
-            self.local_model.model = load_model(model_path)
-        else:
-            print("저장된 모델이 없습니다. 모델을 먼저 학습시키고 저장해주세요.")
+    # def load_saved_model(self):
+    #     import os
+    #     from tensorflow.keras.models import load_model
+    #     model_path = "saved_model.h5"
+    #     if os.path.exists(model_path):
+    #         print("저장된 모델을 불러옵니다:", model_path)
+    #         self.local_model.model = load_model(model_path)
+    #     else:
+    #         print("저장된 모델이 없습니다. 모델을 먼저 학습시키고 저장해주세요.")
 
-    def on_classify_packet(self, payload):
-        global num_classes, selected_labels
-        if self.local_model is None:
-            print("로컬 모델이 초기화되지 않았습니다. 먼저 모델을 초기화해주세요.")
-            return
-        try:
-            packet = payload.get("packet")
-            true_label = payload.get("true_label")
+    # def on_classify_packet(self, payload):
+    #     global num_classes, selected_labels
+    #     if self.local_model is None:
+    #         print("로컬 모델이 초기화되지 않았습니다. 먼저 모델을 초기화해주세요.")
+    #         return
+    #     try:
+    #         packet = payload.get("packet")
+    #         true_label = payload.get("true_label")
             
-            packet_array = np.array(packet)
-            if packet_array.ndim == 1:
-                packet_array = np.expand_dims(packet_array, axis=0)
-            packet_array = packet_array.reshape((-1, 78, 1))
+    #         packet_array = np.array(packet)
+    #         if packet_array.ndim == 1:
+    #             packet_array = np.expand_dims(packet_array, axis=0)
+    #         packet_array = packet_array.reshape((-1, 78, 1))
             
-            prediction = self.local_model.model.predict(packet_array, verbose=1)
-            print(f"Prediction: {prediction}")
-            predicted_idx = np.argmax(prediction, axis=1)[0]
-            print(f"Predicted index: {predicted_idx}")
+    #         prediction = self.local_model.model.predict(packet_array, verbose=1)
+    #         print(f"Prediction: {prediction}")
+    #         predicted_idx = np.argmax(prediction, axis=1)[0]
+    #         print(f"Predicted index: {predicted_idx}")
             
-            class_mapping = {}
-            for i, label in enumerate(selected_labels):
-                if label.upper() == "BENIGN":
-                    class_mapping[i] = "BENIGN"
-                else:
-                    class_mapping[i] = "Attack"
-            predicted_label = class_mapping.get(predicted_idx, "Unknown")
+    #         class_mapping = {}
+    #         for i, label in enumerate(selected_labels):
+    #             if label.upper() == "BENIGN":
+    #                 class_mapping[i] = "BENIGN"
+    #             else:
+    #                 class_mapping[i] = "Attack"
+    #         predicted_label = class_mapping.get(predicted_idx, "Unknown")
             
-            result = "nomaly" if predicted_label == "BENIGN" else "anomaly"
-            is_correct = (predicted_label == true_label) or (true_label.upper() != "BENIGN" and predicted_label == "Attack")
+    #         result = "nomaly" if predicted_label == "BENIGN" else "anomaly"
+    #         is_correct = (predicted_label == true_label) or (true_label.upper() != "BENIGN" and predicted_label == "Attack")
             
-            print("\n[패킷 분류 결과]")
-            print(f"  - 실제 라벨: {true_label}")
-            print(f"  - 예측 라벨: {selected_labels[predicted_idx]}")
-            print(f"  - 분류 결과 (nomaly/anomaly): {result}")
+    #         print("\n[패킷 분류 결과]")
+    #         print(f"  - 실제 라벨: {true_label}")
+    #         print(f"  - 예측 라벨: {selected_labels[predicted_idx]}")
+    #         print(f"  - 분류 결과 (nomaly/anomaly): {result}")
             
-            if not hasattr(self, 'classification_stats'):
-                self.classification_stats = {
-                    'nomaly_correct_predictions': 0, 
-                    'anomaly_correct_predictions': 0,
-                    'nomaly_incorrect_predictions': 0,
-                    'anomaly_incorrect_predictions': 0,
-                    'label_stats': {}
-                }
+    #         if not hasattr(self, 'classification_stats'):
+    #             self.classification_stats = {
+    #                 'nomaly_correct_predictions': 0, 
+    #                 'anomaly_correct_predictions': 0,
+    #                 'nomaly_incorrect_predictions': 0,
+    #                 'anomaly_incorrect_predictions': 0,
+    #                 'label_stats': {}
+    #             }
             
-            if true_label not in self.classification_stats['label_stats']:
-                self.classification_stats['label_stats'][true_label] = {'correct': 0, 'incorrect': {}, 'total': 0, 'correct_but_different': {}}
+    #         if true_label not in self.classification_stats['label_stats']:
+    #             self.classification_stats['label_stats'][true_label] = {'correct': 0, 'incorrect': {}, 'total': 0, 'correct_but_different': {}}
             
-            self.classification_stats['label_stats'][true_label]['total'] += 1
-            if is_correct:
-                self.classification_stats['label_stats'][true_label]['correct'] += 1
-                if predicted_label != true_label:
-                    if selected_labels[predicted_idx] not in self.classification_stats['label_stats'][true_label]['correct_but_different']:
-                        self.classification_stats['label_stats'][true_label]['correct_but_different'][selected_labels[predicted_idx]] = 0
-                    self.classification_stats['label_stats'][true_label]['correct_but_different'][selected_labels[predicted_idx]] += 1
-            else:
-                if result == 'nomaly':
-                    self.classification_stats['nomaly_incorrect_predictions'] += 1
-                else:
-                    self.classification_stats['anomaly_incorrect_predictions'] += 1
-                if selected_labels[predicted_idx] not in self.classification_stats['label_stats'][true_label]['incorrect']:
-                    self.classification_stats['label_stats'][true_label]['incorrect'][selected_labels[predicted_idx]] = 0
-                self.classification_stats['label_stats'][true_label]['incorrect'][selected_labels[predicted_idx]] += 1
+    #         self.classification_stats['label_stats'][true_label]['total'] += 1
+    #         if is_correct:
+    #             self.classification_stats['label_stats'][true_label]['correct'] += 1
+    #             if predicted_label != true_label:
+    #                 if selected_labels[predicted_idx] not in self.classification_stats['label_stats'][true_label]['correct_but_different']:
+    #                     self.classification_stats['label_stats'][true_label]['correct_but_different'][selected_labels[predicted_idx]] = 0
+    #                 self.classification_stats['label_stats'][true_label]['correct_but_different'][selected_labels[predicted_idx]] += 1
+    #         else:
+    #             if result == 'nomaly':
+    #                 self.classification_stats['nomaly_incorrect_predictions'] += 1
+    #             else:
+    #                 self.classification_stats['anomaly_incorrect_predictions'] += 1
+    #             if selected_labels[predicted_idx] not in self.classification_stats['label_stats'][true_label]['incorrect']:
+    #                 self.classification_stats['label_stats'][true_label]['incorrect'][selected_labels[predicted_idx]] = 0
+    #             self.classification_stats['label_stats'][true_label]['incorrect'][selected_labels[predicted_idx]] += 1
             
-            print("\n[라벨별 예측 결과]")
-            for label, stats in self.classification_stats['label_stats'].items():
-                total = stats['total']
-                correct = stats['correct']
-                incorrect_total = sum(stats['incorrect'].values())
-                correct_ratio = (correct / total) * 100 if total > 0 else 0
-                incorrect_ratio = (incorrect_total / total) * 100 if total > 0 else 0
-                print(f"\n라벨: {label}")
-                print(f"  - 총 개수: {total}")
-                print(f"  - 정답 개수: {correct} ({correct_ratio:.2f}%)")
-                for pred_label, count in stats['correct_but_different'].items():
-                    print(f"    - {pred_label}: {count} ({(count / total) * 100:.2f}%)")
-                print(f"  - 오답 개수: {incorrect_total} ({incorrect_ratio:.2f}%)")
-                for pred_label, count in stats['incorrect'].items():
-                    print(f"    - {pred_label}: {count} ({(count / total) * 100:.2f}%)")
+    #         print("\n[라벨별 예측 결과]")
+    #         for label, stats in self.classification_stats['label_stats'].items():
+    #             total = stats['total']
+    #             correct = stats['correct']
+    #             incorrect_total = sum(stats['incorrect'].values())
+    #             correct_ratio = (correct / total) * 100 if total > 0 else 0
+    #             incorrect_ratio = (incorrect_total / total) * 100 if total > 0 else 0
+    #             print(f"\n라벨: {label}")
+    #             print(f"  - 총 개수: {total}")
+    #             print(f"  - 정답 개수: {correct} ({correct_ratio:.2f}%)")
+    #             for pred_label, count in stats['correct_but_different'].items():
+    #                 print(f"    - {pred_label}: {count} ({(count / total) * 100:.2f}%)")
+    #             print(f"  - 오답 개수: {incorrect_total} ({incorrect_ratio:.2f}%)")
+    #             for pred_label, count in stats['incorrect'].items():
+    #                 print(f"    - {pred_label}: {count} ({(count / total) * 100:.2f}%)")
         
-        except Exception as e:
-            print("분류 중 오류 발생:", e)
+    #     except Exception as e:
+    #         print("분류 중 오류 발생:", e)
 
-    def on_file_end(self):
-        try:
-            header = b'ATTACKS'
-            message = {
-                'nomaly_correct_predictions': self.classification_stats['nomaly_correct_predictions'],
-                'nomaly_incorrect_predictions': self.classification_stats['nomaly_incorrect_predictions'],
-                'anomaly_correct_predictions': self.classification_stats['anomaly_correct_predictions'],
-                'anomaly_incorrect_predictions': self.classification_stats['anomaly_incorrect_predictions']
-            }
+    # def on_file_end(self):
+    #     try:
+    #         header = b'ATTACKS'
+    #         message = {
+    #             'nomaly_correct_predictions': self.classification_stats['nomaly_correct_predictions'],
+    #             'nomaly_incorrect_predictions': self.classification_stats['nomaly_incorrect_predictions'],
+    #             'anomaly_correct_predictions': self.classification_stats['anomaly_correct_predictions'],
+    #             'anomaly_incorrect_predictions': self.classification_stats['anomaly_incorrect_predictions']
+    #         }
             
-            message_json = json.dumps(message)
-            self.send_tcp_message(header, message_json)
-            self.file_end = True
+    #         message_json = json.dumps(message)
+    #         self.send_tcp_message(header, message_json)
+    #         self.file_end = True
             
-            print("\n[원본 라벨에 대한 분류 결과]")
-            for label, stats in self.classification_stats['label_stats'].items():
-                total = stats['total']
-                correct = stats['correct']
-                incorrect_total = sum(stats['incorrect'].values())
-                correct_ratio = (correct / total) * 100 if total > 0 else 0
-                incorrect_ratio = (incorrect_total / total) * 100 if total > 0 else 0
-                print(f"\n라벨: {label}")
-                print(f"  - 총 개수: {total}")
-                print(f"  - 정답 개수: {correct} ({correct_ratio:.2f}%)")
-                for pred_label, count in stats['correct_but_different'].items():
-                    print(f"    - {pred_label}: {count} ({(count / total) * 100:.2f}%)")
-                print(f"  - 오답 개수: {incorrect_total} ({incorrect_ratio:.2f}%)")
-                for pred_label, count in stats['incorrect'].items():
-                    print(f"    - {pred_label}: {count} ({(count / total) * 100:.2f}%)")
+    #         print("\n[원본 라벨에 대한 분류 결과]")
+    #         for label, stats in self.classification_stats['label_stats'].items():
+    #             total = stats['total']
+    #             correct = stats['correct']
+    #             incorrect_total = sum(stats['incorrect'].values())
+    #             correct_ratio = (correct / total) * 100 if total > 0 else 0
+    #             incorrect_ratio = (incorrect_total / total) * 100 if total > 0 else 0
+    #             print(f"\n라벨: {label}")
+    #             print(f"  - 총 개수: {total}")
+    #             print(f"  - 정답 개수: {correct} ({correct_ratio:.2f}%)")
+    #             for pred_label, count in stats['correct_but_different'].items():
+    #                 print(f"    - {pred_label}: {count} ({(count / total) * 100:.2f}%)")
+    #             print(f"  - 오답 개수: {incorrect_total} ({incorrect_ratio:.2f}%)")
+    #             for pred_label, count in stats['incorrect'].items():
+    #                 print(f"    - {pred_label}: {count} ({(count / total) * 100:.2f}%)")
             
-            print("[파일 종료 메시지 수신 및 처리 완료]")
-        except Exception as e:
-            print("파일 종료 처리 중 오류 발생:", e)
+    #         print("[파일 종료 메시지 수신 및 처리 완료]")
+    #     except Exception as e:
+    #         print("파일 종료 처리 중 오류 발생:", e)
 
 if __name__ == "__main__":
     time_start = time.time()
