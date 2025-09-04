@@ -6,9 +6,17 @@ import tensorflow as tf
 import psutil
 import subprocess
 
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    try:
+        # 프로그램 초기에 한 번만 모든 GPU에 대해 메모리 증분 할당 활성화
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+    except RuntimeError as e:
+        print("GPU 메모리 증분 할당 설정 중 오류 발생:", e)
+
 # Check available GPU list
 gpus = tf.config.list_physical_devices('GPU')
-print(gpus)
 
 if not gpus:
     print("No available GPU. Use CPU.")
@@ -18,7 +26,9 @@ else:
     for idx, gpu in enumerate(gpus):
         print(f"  {idx}: {gpu.name}")
         
-    selected_gpu = input("Select the index of the GPU to use (-1: use CPU): ").strip()
+    #selected_gpu = input("Select the index of the GPU to use (-1: use CPU): ").strip()
+    selected_gpu = 0
+    
     try:
         selected_gpu = int(selected_gpu)
     except ValueError:
@@ -79,10 +89,16 @@ else:
     
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
 
+import tensorflow as tf
+
+IGNORE_LABEL = 255
+
 class LocalModel(object):
     def __init__(self, model_config, num_classes, selected_labels):
         self.model_config = model_config
         self.model = model_from_json(model_config['model_json'])
+        self.num_classes = num_classes
+        self.selected_Labels = selected_labels
         
         datasource = load_synthia_dataset(binary=False, object_classes=selected_labels)
         self.x_train, self.y_train, self.x_test, self.y_test = datasource
@@ -94,21 +110,48 @@ class LocalModel(object):
     def set_weights(self, new_weights):
         self.model.set_weights(new_weights)
 
+    def loss_sparse_ce_ignore_255(y_true, y_pred):
+        # y_true: (H,W) 또는 (H,W,1) int32, y_pred: (H,W,C)
+        y_true = tf.squeeze(tf.cast(y_true, tf.int32), axis=-1) if tf.rank(y_true) == 4 else tf.cast(y_true, tf.int32)
+        mask = tf.not_equal(y_true, IGNORE_LABEL)                       # (H,W) bool
+        y_true_masked = tf.boolean_mask(y_true, mask)                   # (?,)
+        y_pred_masked = tf.boolean_mask(y_pred, mask)                   # (?,C)
+        loss = tf.keras.losses.sparse_categorical_crossentropy(y_true_masked, y_pred_masked)
+        return tf.reduce_mean(loss)
+
+    @tf.function
+    def masked_pixel_accuracy(y_true, y_pred):
+        y_true = tf.squeeze(tf.cast(y_true, tf.int32), axis=-1) if tf.rank(y_true) == 4 else tf.cast(y_true, tf.int32)
+        mask = tf.not_equal(y_true, IGNORE_LABEL)
+        y_pred_cls = tf.argmax(y_pred, axis=-1, output_type=tf.int32)
+        y_true_masked = tf.boolean_mask(y_true, mask)
+        y_pred_masked = tf.boolean_mask(y_pred_cls, mask)
+        correct = tf.reduce_sum(tf.cast(tf.equal(y_true_masked, y_pred_masked), tf.float32))
+        total   = tf.cast(tf.size(y_true_masked), tf.float32)
+        return tf.where(total > 0, correct / total, 0.0)
+
     # return final weights, train loss, train accuracy
     def train_one_round(self):        
         start_time = time.time()
+        
+        # 배치 크기 안전 처리
+        bs = int(self.model_config.get('batch_size', 8))
+        bs = max(1, min(bs, 8))  # 224x224 기준 보수적으로 8 제한(메모리 상황에 맞게 조정)
+
         self.model.compile(
-            loss='categorical_crossentropy',  # 손실 함수 변경
-            optimizer=RMSprop(),  # 옵티마이저 변경 가능
-            metrics=['accuracy']
+            loss=self.loss_sparse_ce_ignore_255,
+            optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
+            metrics=[self.masked_pixel_accuracy],
         )
+
         self.loss = self.model.fit(
-            self.x_train, self.y_train,  # y_train으로 변경
-            epochs=self.model_config['epoch_per_round'],
-            batch_size=self.model_config['batch_size'],
-            validation_data=(self.x_test, self.y_test),  # y_test로 변경
+            self.x_train, self.y_train,
+            epochs=self.model_config.get('epoch_per_round', 1),
+            batch_size=bs,
+            validation_data=(self.x_test, self.y_test),
             verbose=2
         )
+   
         end_time = time.time()
         train_time = end_time - start_time
 
@@ -123,45 +166,49 @@ class LocalModel(object):
         return self.model.get_weights(), current_loss, train_time, peak_memory_mb
 
     def evaluate1(self):
-        def calculate_losses(x, preds):
-            losses = np.zeros(len(x))
-            for i in range(len(x)):
-                losses[i] = np.mean(np.square(preds[i] - x[i]))
-            return losses
+    
+        total_inter = np.zeros(self.num_classes, dtype=np.float64)
+        total_union = np.zeros(self.num_classes, dtype=np.float64)
+        total_correct = 0
+        total_labeled = 0
 
-        print("Computing threshold from training data predictions...")
-        train_preds = self.model.predict(self.x_train, batch_size=16, verbose=1)
-        train_anomaly_scores = calculate_losses(self.x_train, train_preds)
-        self.anomaly_threshold = np.percentile(train_anomaly_scores, 99)
-        print("Computed threshold:", self.anomaly_threshold)
+        # 배치로 돌면서 누적
+        bs_eval = 4
+        for i in range(0, len(self.x_test), bs_eval):
+            xb = self.x_test[i:i+bs_eval]
+            yb = self.y_test[i:i+bs_eval]
 
-        testing_set_predictions = self.model.predict(self.x_test, verbose=1)
-        test_anomaly_scores = calculate_losses(self.x_test, testing_set_predictions)
+            pred = self.model.predict(xb, verbose=0)
+            pred_cls = np.argmax(pred, axis=-1).astype(np.int32)  # (B,H,W)
 
-        # 이진 장애 탐지를 위한 임계값 적용
-        binary_predictions = np.zeros(len(test_anomaly_scores))
-        binary_predictions[test_anomaly_scores > self.anomaly_threshold] = 1
+            # 배치마다 집계
+            for y_true, y_pred in zip(yb, pred_cls):
+                valid = (y_true != IGNORE_LABEL)
+                y_true_v = y_true[valid]
+                y_pred_v = y_pred[valid]
 
-        # 원-핫 인코딩된 y_test를 이진 값으로 변환 (예: BENIGN이면 0, 그 외는 1)
-        true_labels = np.argmax(self.y_test, axis=1)
+                total_correct += np.sum(y_true_v == y_pred_v)
+                total_labeled += y_true_v.size
 
-        # selected_labels 전역 변수를 사용하여 BENIGN의 인덱스를 찾아 benign_index로 설정
-        benign_index = 0
-        if selected_labels:
-            for idx, lab in enumerate(selected_labels):
-                if lab.upper() == "BENIGN":
-                    benign_index = idx
-                    break
+                for c in range(num_classes):
+                    yt = (y_true_v == c)
+                    yp = (y_pred_v == c)
+                    inter = np.logical_and(yt, yp).sum()
+                    union = np.logical_or(yt, yp).sum()
+                    total_inter[c] += inter
+                    total_union[c] += union
 
-        # BENIGN 클래스(benign_index) 외의 값은 모두 1(attack)로 매핑
-        binary_true_labels = np.where(true_labels == benign_index, 0, 1)
+        pixel_acc = (total_correct / total_labeled) if total_labeled > 0 else 0.0
+        class_iou = total_inter / np.maximum(total_union, 1e-9)
+        miou = float(np.mean(class_iou[np.isfinite(class_iou)]))
 
-        precision = precision_score(binary_true_labels, binary_predictions, average='binary')
-        recall = recall_score(binary_true_labels, binary_predictions, average='binary')
-        f1 = f1_score(binary_true_labels, binary_predictions, average='binary')
-        print("Performance over the testing data set:")
-        print("  Recall: {:.16f}, Precision: {:.16f}, F1: {:.16f}".format(recall, precision, f1))
-        return f1, precision, recall
+        print("Segmentation Evaluation:")
+        print(f"  PixelAcc: {pixel_acc:.4f}, mIoU: {miou:.4f}")
+
+        # 인터페이스 유지: (f1, precision, recall)을 반환하던 자리에 mIoU/Acc를 넣어 돌려줍니다.
+        # (서버가 실제로 이 세 값의 의미를 쓰지는 않는 구조라면 그냥 자리 채움용으로 써도 됩니다.)
+        return miou, pixel_acc, 0.0  # (f1≈mIoU 대체, precision≈pixelAcc 대체, recall은 0.0)
+
 
 # A federated client is a process that can go to sleep / wake up intermittently
 # it learns the global model by communication with the server;
@@ -214,15 +261,6 @@ class FederatedClient(object):
         })
         self.send_tcp_message('OPERATE', message)
         self.receive_tcp_messages()
-
-        gpus = tf.config.experimental.list_physical_devices('GPU')
-        if gpus:
-            try:
-                # 프로그램 초기에 한 번만 모든 GPU에 대해 메모리 증분 할당 활성화
-                for gpu in gpus:
-                    tf.config.experimental.set_memory_growth(gpu, True)
-            except RuntimeError as e:
-                print("GPU 메모리 증분 할당 설정 중 오류 발생:", e)
 
     # def setup_attacker_listener(self, attacker_port):
     #     """공격자 클라이언트의 연결을 수신하기 위한 서버 소켓을 설정합니다."""
@@ -362,12 +400,12 @@ class FederatedClient(object):
         # 모델 및 데이터셋 초기화
         self.local_model = LocalModel(model_config, num_classes, selected_labels)
         
-        if self.benign_train_only:
-            # benign label(0) 데이터만 사용하도록 확인 및 추가 필터링
-            indices = np.where(self.local_model.y_train == 0)[0]
-            self.local_model.x_train = self.local_model.x_train[indices]
-            self.local_model.y_train = self.local_model.y_train[indices]
-            print("benign_train_only 플래그 활성화: benign 데이터만 학습에 사용합니다.")
+        # if self.benign_train_only:
+        #     # benign label(0) 데이터만 사용하도록 확인 및 추가 필터링
+        #     indices = np.where(self.local_model.y_train == 0)[0]
+        #     self.local_model.x_train = self.local_model.x_train[indices]
+        #     self.local_model.y_train = self.local_model.y_train[indices]
+        #     print("benign_train_only 플래그 활성화: benign 데이터만 학습에 사용합니다.")
         
         # model_json을 json 형식으로 변환하여 저장: 문자열을 딕셔너리로 변환
         try:
@@ -473,10 +511,10 @@ class FederatedClient(object):
     
         additional_metrics = {
             'round_number': req['round_number'],
-            'loss': self.local_model.loss.history['loss'][-1],
-            'accuracy': self.local_model.loss.history['accuracy'][-1],
-            'val_loss': self.local_model.loss.history['val_loss'][-1],
-            'val_accuracy': self.local_model.loss.history['val_accuracy'][-1]
+            'loss': float(self.loss.history['loss'][-1]),
+            'val_loss': float(self.loss.history.get('val_loss', [np.nan])[-1]),
+            # 학습 에폭 끝난 시점에서의 masked pixel acc (history에는 우리 커스텀 메트릭 이름이 들어갈 수도 있음)
+            'masked_pixel_acc': float(self.loss.history.get('masked_pixel_accuracy', [np.nan])[-1])
         }
         self.send_additional_metrics(additional_metrics)
 
