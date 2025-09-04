@@ -29,7 +29,8 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.models import Sequential, Model, load_model
 from tensorflow.keras.layers import (
-    Input, Dense, Dropout, Flatten, LeakyReLU, Conv1D, BatchNormalization, MaxPooling1D, Activation, GlobalAveragePooling1D
+    Input, Dense, Dropout, Flatten, LeakyReLU, Conv1D, BatchNormalization, MaxPooling1D, Activation, GlobalAveragePooling1D,
+    Conv2D, MaxPooling2D, UpSampling2D, concatenate, Conv2DTranspose
 )
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras import backend as K
@@ -147,36 +148,76 @@ class GlobalModel_CICIDS(GlobalModel):
         super(GlobalModel_CICIDS, self).__init__()
 
     def build_model(self):
-        model = Sequential()
-        model.add(Conv1D(64, kernel_size=7, input_shape=(78, 1)))
-        model.add(BatchNormalization())
-        model.add(Activation('relu'))
-        model.add(MaxPooling1D(pool_size=2))
+        """
+        SYNTHIA Semantic Segmentation을 위한 U-Net 모델
+        """
+        # config.json에서 클래스 수 읽기
+        with open('config.json', 'r') as f:
+            config = json.load(f)
+        num_classes = config['num_classes']
         
-        model.add(Conv1D(64, kernel_size=3))
-        model.add(BatchNormalization())
-        model.add(Activation('relu'))
-        model.add(MaxPooling1D(pool_size=2))
+        inputs = Input((256, 256, 3))
         
-        model.add(Conv1D(64, kernel_size=3))
-        model.add(BatchNormalization())
-        model.add(Activation('relu'))
-        model.add(MaxPooling1D(pool_size=2))
+        # Encoder (다운샘플링)
+        conv1 = Conv2D(64, 3, activation='relu', padding='same', kernel_initializer='he_normal')(inputs)
+        conv1 = Conv2D(64, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv1)
+        pool1 = MaxPooling2D(pool_size=(2, 2))(conv1)
         
-        model.add(Flatten())
-        model.add(Dense(64, activation='relu'))
-        model.add(Dropout(0.3))  # 추가
-        model.add(Dense(64, activation='relu'))
-        model.add(Dropout(0.3))  # 추가
-        model.add(Dense(num_classes, activation='softmax'))
+        conv2 = Conv2D(128, 3, activation='relu', padding='same', kernel_initializer='he_normal')(pool1)
+        conv2 = Conv2D(128, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv2)
+        pool2 = MaxPooling2D(pool_size=(2, 2))(conv2)
         
-        optimizer = Adam(learning_rate=0.001)
+        conv3 = Conv2D(256, 3, activation='relu', padding='same', kernel_initializer='he_normal')(pool2)
+        conv3 = Conv2D(256, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv3)
+        pool3 = MaxPooling2D(pool_size=(2, 2))(conv3)
+        
+        # Bottom
+        conv4 = Conv2D(512, 3, activation='relu', padding='same', kernel_initializer='he_normal')(pool3)
+        conv4 = Conv2D(512, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv4)
+        
+        # Decoder (업샘플링)
+        up5 = UpSampling2D(size=(2, 2))(conv4)
+        merge5 = concatenate([conv3, up5], axis=3)
+        conv5 = Conv2D(256, 3, activation='relu', padding='same', kernel_initializer='he_normal')(merge5)
+        conv5 = Conv2D(256, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv5)
+        
+        up6 = UpSampling2D(size=(2, 2))(conv5)
+        merge6 = concatenate([conv2, up6], axis=3)
+        conv6 = Conv2D(128, 3, activation='relu', padding='same', kernel_initializer='he_normal')(merge6)
+        conv6 = Conv2D(128, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv6)
+        
+        up7 = UpSampling2D(size=(2, 2))(conv6)
+        merge7 = concatenate([conv1, up7], axis=3)
+        conv7 = Conv2D(64, 3, activation='relu', padding='same', kernel_initializer='he_normal')(merge7)
+        conv7 = Conv2D(64, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv7)
+        
+        # 출력 레이어
+        outputs = Conv2D(num_classes, 1, activation='softmax')(conv7)
+        
+        model = Model(inputs=inputs, outputs=outputs)
+        
+        # ignore 레이블 처리를 위한 커스텀 손실 함수
+        def custom_sparse_categorical_crossentropy(y_true, y_pred):
+            # ignore 레이블 (255)을 마스크 처리
+            mask = tf.not_equal(y_true, 255)
+            
+            # 유효한 픽셀만 선택
+            y_true_masked = tf.boolean_mask(y_true, mask)
+            y_pred_masked = tf.boolean_mask(y_pred, mask)
+            
+            # 표준 sparse categorical crossentropy 적용
+            loss = tf.keras.losses.sparse_categorical_crossentropy(y_true_masked, y_pred_masked)
+            
+            return tf.reduce_mean(loss)
+        
+        optimizer = Adam(learning_rate=0.0001)
         model.compile(
-            loss='categorical_crossentropy',
+            loss=custom_sparse_categorical_crossentropy,
             optimizer=optimizer,
             metrics=['accuracy']
         )
         
+        print(f"[서버] SYNTHIA용 U-Net 모델 생성 완료 - 입력: (224,224,3), 출력: {num_classes}개 클래스")
         model.summary()
         return model
 
