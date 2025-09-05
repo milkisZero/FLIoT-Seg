@@ -6,39 +6,23 @@ import tensorflow as tf
 import psutil
 import subprocess
 
-gpus = tf.config.experimental.list_physical_devices('GPU')
-if gpus:
-    try:
-        # 프로그램 초기에 한 번만 모든 GPU에 대해 메모리 증분 할당 활성화
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-    except RuntimeError as e:
-        print("GPU 메모리 증분 할당 설정 중 오류 발생:", e)
-
-# Check available GPU list
+selected_gpu = 0   # -1이면 CPU
 gpus = tf.config.list_physical_devices('GPU')
 
-if not gpus:
-    print("No available GPU. Use CPU.")
-    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+if selected_gpu == -1 or not gpus:
+    # CPU만 쓰기
+    tf.config.set_visible_devices([], 'GPU')
+    print("Using CPU only.")
 else:
-    print("Available GPU list:")
-    for idx, gpu in enumerate(gpus):
-        print(f"  {idx}: {gpu.name}")
-        
-    #selected_gpu = input("Select the index of the GPU to use (-1: use CPU): ").strip()
-    selected_gpu = 0
-    
     try:
-        selected_gpu = int(selected_gpu)
-    except ValueError:
-        print("Invalid input. Using default GPU 0.")
-        selected_gpu = 0
+        # 반드시 GPU 초기화(첫 연산) 전에 호출해야 함
+        tf.config.set_visible_devices([gpus[selected_gpu]], 'GPU')
+        tf.config.experimental.set_memory_growth(gpus[selected_gpu], True)
+        print("Using:", tf.config.get_visible_devices('GPU'))
+    except RuntimeError as e:
+        # 이미 초기화된 뒤라면 여기로 옴
+        print("Failed to set visible devices (likely already initialized):", e)
 
-    if selected_gpu == -1:
-        os.environ["CUDA_VISIBLE_DEVICES"] = ""
-    else:
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(selected_gpu)
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'  # 0 = all logs, 1 = INFO 필터, 2 = WARNING 필터, 3 = ERROR 필터
 
@@ -87,11 +71,57 @@ else:
     TCP_SERVER_IP = '192.168.0.10'  # 수신 라즈베리파이의 IP 주소
     TCP_SERVER_PORT = 3105
     
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
-
-import tensorflow as tf
+# === overlay utils (client) ===
+from PIL import Image
+import numpy as np
+import os
 
 IGNORE_LABEL = 255
+
+def _make_palette(num_classes: int):
+    rng = np.random.RandomState(42)
+    return (rng.randint(0, 255, size=(num_classes, 3))).astype(np.uint8)  # (C,3) RGB
+
+def _overlay_mask_on_image(img01, mask, palette, alpha=0.5):
+    """
+    img01: float32 [0,1], shape (H,W,3)
+    mask : int32,        shape (H,W), 예측 클래스 맵
+    """
+    img = (np.clip(img01 * 255.0, 0, 255)).astype(np.uint8)         # (H,W,3) RGB uint8
+    color = palette[mask % len(palette)]                            # (H,W,3)
+    over  = (alpha * color + (1 - alpha) * img).astype(np.uint8)
+    return over
+
+def loss_sparse_ce_ignore_255(y_true, y_pred):
+    # y_true: (B,H,W) 또는 (B,H,W,1)
+    # y_pred: (B,H,W,C) [softmax]
+    y_true = tf.cast(y_true, tf.int32)
+
+    # (B,H,W,1) -> (B,H,W), (B,H,W)는 그대로 유지
+    y_true = tf.reshape(y_true, tf.shape(y_true)[:3])
+
+    # ignore=255 마스킹
+    mask = tf.not_equal(y_true, IGNORE_LABEL)          # (B,H,W)
+    yt = tf.boolean_mask(y_true, mask)                 # (?,)
+    yp = tf.boolean_mask(y_pred, mask)                 # (?,C)
+
+    loss = tf.keras.losses.sparse_categorical_crossentropy(yt, yp)
+    return tf.reduce_mean(loss)
+
+@tf.function
+def masked_pixel_accuracy(y_true, y_pred):
+    y_true = tf.cast(y_true, tf.int32)
+    y_true = tf.reshape(y_true, tf.shape(y_true)[:3])  # (B,H,W)
+
+    mask = tf.not_equal(y_true, IGNORE_LABEL)
+    pred_cls = tf.argmax(y_pred, axis=-1, output_type=tf.int32)  # (B,H,W)
+
+    yt = tf.boolean_mask(y_true, mask)
+    yp = tf.boolean_mask(pred_cls, mask)
+
+    correct = tf.reduce_sum(tf.cast(tf.equal(yt, yp), tf.float32))
+    total   = tf.cast(tf.size(yt), tf.float32)
+    return tf.where(total > 0, correct / total, 0.0)
 
 class LocalModel(object):
     def __init__(self, model_config, num_classes, selected_labels):
@@ -110,38 +140,18 @@ class LocalModel(object):
     def set_weights(self, new_weights):
         self.model.set_weights(new_weights)
 
-    def loss_sparse_ce_ignore_255(y_true, y_pred):
-        # y_true: (H,W) 또는 (H,W,1) int32, y_pred: (H,W,C)
-        y_true = tf.squeeze(tf.cast(y_true, tf.int32), axis=-1) if tf.rank(y_true) == 4 else tf.cast(y_true, tf.int32)
-        mask = tf.not_equal(y_true, IGNORE_LABEL)                       # (H,W) bool
-        y_true_masked = tf.boolean_mask(y_true, mask)                   # (?,)
-        y_pred_masked = tf.boolean_mask(y_pred, mask)                   # (?,C)
-        loss = tf.keras.losses.sparse_categorical_crossentropy(y_true_masked, y_pred_masked)
-        return tf.reduce_mean(loss)
-
-    @tf.function
-    def masked_pixel_accuracy(y_true, y_pred):
-        y_true = tf.squeeze(tf.cast(y_true, tf.int32), axis=-1) if tf.rank(y_true) == 4 else tf.cast(y_true, tf.int32)
-        mask = tf.not_equal(y_true, IGNORE_LABEL)
-        y_pred_cls = tf.argmax(y_pred, axis=-1, output_type=tf.int32)
-        y_true_masked = tf.boolean_mask(y_true, mask)
-        y_pred_masked = tf.boolean_mask(y_pred_cls, mask)
-        correct = tf.reduce_sum(tf.cast(tf.equal(y_true_masked, y_pred_masked), tf.float32))
-        total   = tf.cast(tf.size(y_true_masked), tf.float32)
-        return tf.where(total > 0, correct / total, 0.0)
-
     # return final weights, train loss, train accuracy
     def train_one_round(self):        
         start_time = time.time()
         
-        # 배치 크기 안전 처리
+        # 배치 크기 안전 처리 해야함
         bs = int(self.model_config.get('batch_size', 8))
-        bs = max(1, min(bs, 8))  # 224x224 기준 보수적으로 8 제한(메모리 상황에 맞게 조정)
+        bs = max(1, min(bs, 2))
 
         self.model.compile(
-            loss=self.loss_sparse_ce_ignore_255,
+            loss=loss_sparse_ce_ignore_255,
             optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
-            metrics=[self.masked_pixel_accuracy],
+            metrics=[masked_pixel_accuracy],
         )
 
         self.loss = self.model.fit(
@@ -149,7 +159,7 @@ class LocalModel(object):
             epochs=self.model_config.get('epoch_per_round', 1),
             batch_size=bs,
             validation_data=(self.x_test, self.y_test),
-            verbose=2
+            verbose=1
         )
    
         end_time = time.time()
@@ -165,23 +175,33 @@ class LocalModel(object):
             
         return self.model.get_weights(), current_loss, train_time, peak_memory_mb
 
-    def evaluate1(self):
-    
-        total_inter = np.zeros(self.num_classes, dtype=np.float64)
-        total_union = np.zeros(self.num_classes, dtype=np.float64)
+    def evaluate1(self, round_number=None, save_overlays=True, num_samples=8, alpha=0.5):
+        """
+        세그멘테이션 평가 (ignore=255 무시): mIoU, PixelAcc 계산
+        + (옵션) 예측 오버레이 파일 저장 (evaluate1에서만)
+        반환값은 기존 인터페이스 호환을 위해 (miou, pixel_acc, 0.0) 사용
+        """
+        # 클래스 수/팔레트
+        try:
+            n_classes = int(self.model.output_shape[-1])
+        except Exception:
+            n_classes = int(np.max(self.y_train[self.y_train != IGNORE_LABEL])) + 1
+        palette = _make_palette(n_classes)
+
+        total_inter = np.zeros(n_classes, dtype=np.float64)
+        total_union = np.zeros(n_classes, dtype=np.float64)
         total_correct = 0
         total_labeled = 0
 
-        # 배치로 돌면서 누적
+        # 배치 추론 및 누적
         bs_eval = 4
         for i in range(0, len(self.x_test), bs_eval):
-            xb = self.x_test[i:i+bs_eval]
-            yb = self.y_test[i:i+bs_eval]
+            xb = self.x_test[i:i+bs_eval].astype(np.float32)  # (B,256,256,3), [0,1]
+            yb = self.y_test[i:i+bs_eval].astype(np.int32)    # (B,256,256)
 
-            pred = self.model.predict(xb, verbose=0)
-            pred_cls = np.argmax(pred, axis=-1).astype(np.int32)  # (B,H,W)
+            pred = self.model.predict(xb, verbose=0)          # (B,256,256,C)
+            pred_cls = np.argmax(pred, axis=-1).astype(np.int32)  # (B,256,256)
 
-            # 배치마다 집계
             for y_true, y_pred in zip(yb, pred_cls):
                 valid = (y_true != IGNORE_LABEL)
                 y_true_v = y_true[valid]
@@ -190,7 +210,7 @@ class LocalModel(object):
                 total_correct += np.sum(y_true_v == y_pred_v)
                 total_labeled += y_true_v.size
 
-                for c in range(num_classes):
+                for c in range(n_classes):
                     yt = (y_true_v == c)
                     yp = (y_pred_v == c)
                     inter = np.logical_and(yt, yp).sum()
@@ -205,10 +225,28 @@ class LocalModel(object):
         print("Segmentation Evaluation:")
         print(f"  PixelAcc: {pixel_acc:.4f}, mIoU: {miou:.4f}")
 
-        # 인터페이스 유지: (f1, precision, recall)을 반환하던 자리에 mIoU/Acc를 넣어 돌려줍니다.
-        # (서버가 실제로 이 세 값의 의미를 쓰지는 않는 구조라면 그냥 자리 채움용으로 써도 됩니다.)
-        return miou, pixel_acc, 0.0  # (f1≈mIoU 대체, precision≈pixelAcc 대체, recall은 0.0)
+        # === (여기서만) 오버레이 저장 ===
+        if save_overlays and len(self.x_test) > 0:
+            base = os.path.join("results", "image")
+            tag = f"eval_round_{round_number}" if round_number is not None else "eval_final"
+            out_dir = os.path.join(base, "overlays", tag)
+            os.makedirs(out_dir, exist_ok=True)
 
+            # 균등 샘플 n개 추출
+            n = min(num_samples, len(self.x_test))
+            idxs = np.linspace(0, len(self.x_test) - 1, num=n, dtype=int)
+            xb = self.x_test[idxs].astype(np.float32)
+            pred = self.model.predict(xb, verbose=0)
+            pred_cls = np.argmax(pred, axis=-1).astype(np.int32)
+
+            for j, idx in enumerate(idxs):
+                over = _overlay_mask_on_image(xb[j], pred_cls[j], palette, alpha=alpha)
+                Image.fromarray(over).save(os.path.join(out_dir, f"test_{idx}.png"))
+
+            print(f"[Overlay] 저장: {out_dir} (샘플 {n}장)")
+
+        # 인터페이스 호환 (f1, precision, recall 자리)
+        return miou, pixel_acc, 0.0
 
 # A federated client is a process that can go to sleep / wake up intermittently
 # it learns the global model by communication with the server;
@@ -511,10 +549,10 @@ class FederatedClient(object):
     
         additional_metrics = {
             'round_number': req['round_number'],
-            'loss': float(self.loss.history['loss'][-1]),
-            'val_loss': float(self.loss.history.get('val_loss', [np.nan])[-1]),
+            'loss': float(self.local_model.loss.history['loss'][-1]),
+            'val_loss': float(self.local_model.loss.history.get('val_loss', [np.nan])[-1]),
             # 학습 에폭 끝난 시점에서의 masked pixel acc (history에는 우리 커스텀 메트릭 이름이 들어갈 수도 있음)
-            'masked_pixel_acc': float(self.loss.history.get('masked_pixel_accuracy', [np.nan])[-1])
+            'masked_pixel_acc': float(self.local_model.loss.history.get('masked_pixel_accuracy', [np.nan])[-1])
         }
         self.send_additional_metrics(additional_metrics)
 
