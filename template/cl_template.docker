@@ -6,6 +6,7 @@
       - .env
     environment:
       - PYTHONUNBUFFERED=1
+      - TF_GPU_ALLOCATOR=cuda_malloc_async
     deploy:
           resources:
             reservations:

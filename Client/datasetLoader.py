@@ -40,7 +40,7 @@ def load_synthia_dataset(binary=False, object_classes=None, show_progress=True):
                 
                 # 라벨 이미지 (정수값 유지)
                 lab = np.array(
-                    Image.open(label_file).resize(target_size, Image.NEAREST)
+                    Image.open(label_file).convert("L").resize(target_size, Image.NEAREST)
                 )
                 
                 if binary and object_classes is not None:
@@ -54,7 +54,7 @@ def load_synthia_dataset(binary=False, object_classes=None, show_progress=True):
             except Exception as e:
                 skipped += 1
                 iterator.set_postfix(skipped=skipped)
-                print(f"⚠️ Error reading {rgb_file}: {e}")
+                print(f"Error reading {rgb_file}: {e}")
                 continue
 
         print(f"[{phase}] skipped (missing or broken): {skipped}")

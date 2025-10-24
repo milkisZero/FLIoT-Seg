@@ -2,6 +2,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import os
+os.environ['TF_GPU_ALLOCATOR'] = 'cuda_malloc_async'  # TF import 전에
 import tensorflow as tf
 import psutil
 import subprocess
@@ -23,6 +24,9 @@ else:
         # 이미 초기화된 뒤라면 여기로 옴
         print("Failed to set visible devices (likely already initialized):", e)
 
+# AMP
+from tensorflow.keras import mixed_precision
+mixed_precision.set_global_policy('mixed_float16')  # 메모리/대역폭 절감
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'  # 0 = all logs, 1 = INFO 필터, 2 = WARNING 필터, 3 = ERROR 필터
 
@@ -78,18 +82,54 @@ import os
 
 IGNORE_LABEL = 255
 
-def _make_palette(num_classes: int):
-    rng = np.random.RandomState(42)
-    return (rng.randint(0, 255, size=(num_classes, 3))).astype(np.uint8)  # (C,3) RGB
+# ID(0~22) 순서대로 RGB
+SYNTHIA_RGB = [
+    (128,  64, 128),   # 0  road
+    (244,  35, 232),   # 1  sidewalk
+    ( 70,  70,  70),   # 2  building
+    (102, 102, 156),   # 3  wall
+    (190, 153, 153),   # 4  fence
+    (153, 153, 153),   # 5  pole
+    (250, 170,  30),   # 6  traffic light
+    (220, 220,   0),   # 7  traffic sign
+    (107, 142,  35),   # 8  vegetation
+    (152, 251, 152),   # 9  terrain
+    ( 70, 130, 180),   # 10 sky
+    (220,  20,  60),   # 11 person
+    (255,   0,   0),   # 12 rider
+    (  0,   0, 142),   # 13 car
+    (  0,   0,  70),   # 14 truck
+    (  0,  60, 100),   # 15 bus
+    (  0,  80, 100),   # 16 train
+    (  0,   0, 230),   # 17 motorcycle
+    (119,  11,  32),   # 18 bicycle
+]
+
+def _make_palette(num_classes: int) -> np.ndarray:
+    base = np.asarray(SYNTHIA_RGB, dtype=np.uint8)
+    return base[:num_classes]
 
 def _overlay_mask_on_image(img01, mask, palette, alpha=0.5):
     """
     img01: float32 [0,1], shape (H,W,3)
     mask : int32,        shape (H,W), 예측 클래스 맵
     """
-    img = (np.clip(img01 * 255.0, 0, 255)).astype(np.uint8)         # (H,W,3) RGB uint8
-    color = palette[mask % len(palette)]                            # (H,W,3)
-    over  = (alpha * color + (1 - alpha) * img).astype(np.uint8)
+    # 원본을 uint8로
+    img = (np.clip(img01 * 255.0, 0, 255)).astype(np.uint8)  # (H,W,3)
+
+    # 유효 픽셀 (색칠할 위치)
+    valid = (mask != IGNORE_LABEL)
+
+    # 팔레트 인덱싱(모듈로 X, 안전하게 클립)
+    idx = np.clip(mask.astype(np.int32), 0, len(palette) - 1)
+    color = palette[idx].astype(np.uint8)                    # (H,W,3)
+
+    # 반투명 블렌딩 결과
+    blended = (alpha * color + (1.0 - alpha) * img).astype(np.uint8)
+
+    # ignore 픽셀은 원본 유지, 나머지만 덮기
+    over = img.copy()
+    over[valid] = blended[valid]
     return over
 
 def loss_sparse_ce_ignore_255(y_true, y_pred):
@@ -97,8 +137,8 @@ def loss_sparse_ce_ignore_255(y_true, y_pred):
     # y_pred: (B,H,W,C) [softmax]
     y_true = tf.cast(y_true, tf.int32)
 
-    # (B,H,W,1) -> (B,H,W), (B,H,W)는 그대로 유지
-    y_true = tf.reshape(y_true, tf.shape(y_true)[:3])
+    # # (B,H,W,1) -> (B,H,W), (B,H,W)는 그대로 유지
+    # y_true = tf.reshape(y_true, tf.shape(y_true)[:3])
 
     # ignore=255 마스킹
     mask = tf.not_equal(y_true, IGNORE_LABEL)          # (B,H,W)
@@ -143,10 +183,6 @@ class LocalModel(object):
     # return final weights, train loss, train accuracy
     def train_one_round(self):        
         start_time = time.time()
-        
-        # 배치 크기 안전 처리 해야함
-        bs = int(self.model_config.get('batch_size', 8))
-        bs = max(1, min(bs, 2))
 
         self.model.compile(
             loss=loss_sparse_ce_ignore_255,
@@ -157,7 +193,7 @@ class LocalModel(object):
         self.loss = self.model.fit(
             self.x_train, self.y_train,
             epochs=self.model_config.get('epoch_per_round', 1),
-            batch_size=bs,
+            batch_size=self.model_config.get('batch_size', 1),
             validation_data=(self.x_test, self.y_test),
             verbose=1
         )
@@ -565,7 +601,7 @@ class FederatedClient(object):
             weights = pickle_string_to_obj(req['current_weights'])
         with self.eval_lock:
             self.local_model.set_weights(weights)
-        f1, precision, recall = self.local_model.evaluate1()
+        f1, precision, recall = self.local_model.evaluate1(round_number=req["round_number"])
         time_end = time.time()
         print('\033[1;35;0m Time cost = %fs \033[0m' % (time_end - time_start))
         #test_loss, test_accuracy = self.local_model.evaluate()

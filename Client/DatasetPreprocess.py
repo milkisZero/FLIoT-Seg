@@ -133,7 +133,7 @@ def main():
     print(f"총 {len(matched_pairs)}개의 (RGB, labelTrainIds) 쌍을 발견했습니다.")
 
     # --- [추가] 클래스 선택 로직 (TrainIds 0~22) ---
-    unique_labels = list(range(23))  # SYNTHIA TrainIds: 0..22
+    unique_labels = list(range(19))  # SYNTHIA TrainIds: 0..22
     selected_idx_str = os.getenv("LABEL", "").strip()
 
     if selected_idx_str.upper() == "ALL":
