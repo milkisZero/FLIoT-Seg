@@ -69,6 +69,8 @@ class SimpleConfig:
         # Model
         self.num_classes = config_dict['model']['num_classes']
         self.selected_labels = config_dict['model']['selected_labels']
+        self.epoch_per_round = config_dict['model']['epoch_per_round']
+        self.batch_size = config_dict['model']['batch_size']
         # self.input_shape = tuple(config_dict['model'].get('input_shape', [256, 256, 3]))
         
         # Training

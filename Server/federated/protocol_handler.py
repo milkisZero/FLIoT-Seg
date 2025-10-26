@@ -80,8 +80,8 @@ class FLProtocolHandler:
                     'selected_labels': self.config.selected_labels,
 
                     #'data_split': (0.6, 0.3, 0.1), # train, test, valid
-                    'epoch_per_round': 1,
-                    'batch_size': 2
+                    'epoch_per_round': self.config.epoch_per_round,
+                    'batch_size': self.config.batch_size
                 }
             }
             self.mobius.publish(client_id+'FromS', data)
