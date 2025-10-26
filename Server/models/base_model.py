@@ -1,6 +1,7 @@
 import numpy as np
 import time
 import json
+from utils.pickle_utils import obj_to_pickle_string, pickle_string_to_obj
 
 class BaseGlobalModel(object):#类文档字符串
     """docstring for GlobalModel"""
