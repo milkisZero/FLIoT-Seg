@@ -49,7 +49,7 @@ import codecs
 from keras.models import model_from_json
 from pickle_utils import obj_to_pickle_string, pickle_string_to_obj
 from sklearn.metrics import f1_score,precision_score,recall_score,accuracy_score,confusion_matrix,roc_curve,auc
-from datasetLoader import load_synthia_dataset
+from FLIoT2ndGen.Client.model.datasetLoader import load_synthia_dataset
 import datetime,time
 import socket
 import struct

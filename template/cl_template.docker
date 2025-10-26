@@ -21,8 +21,11 @@
     volumes:
       - ./Client/SYNTHIA_Splitted/client{NUM}/train:/app/SYNTHIA_Splitted/client/train
       - ./Client/SYNTHIA_Splitted/client{NUM}/test:/app/SYNTHIA_Splitted/client/test
-      - ./Client/datasetLoader.py:/app/datasetLoader.py
       - ./Client/fl_client.py:/app/fl_client.py
+      - ./Client/model:/app/model
+      - ./Client/communication:/app/communication
+      - ./Client/utils:/app/utils
+      - ./Client/federated:/app/federated
       - ./results/Client{NUM}:/app/results
     ports:
       - {PORT}:4000

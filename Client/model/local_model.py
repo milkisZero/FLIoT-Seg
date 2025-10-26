@@ -3,7 +3,7 @@ from keras.models import model_from_json
 import resource 
 import time
 import tensorflow as tf
-from datasetLoader import load_synthia_dataset
+from FLIoT2ndGen.Client.model.datasetLoader import load_synthia_dataset
 import os
 from PIL import Image
 
