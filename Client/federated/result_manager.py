@@ -61,9 +61,9 @@ class FLResultManager:
             os.makedirs(json_dir)
     
     def _initialize_json_file(self):
-        """JSON 파일 초기화 (빈 리스트)"""
-        with open(self.json_file_path, "w", encoding='utf-8') as f:
-            json.dump([], f, indent=4)
+        if not os.path.exists(self.json_file_path):
+            with open(self.json_file_path, "w", encoding='utf-8') as f:
+                json.dump([], f, indent=4, ensure_ascii=False)
     
     def _get_current_memory_mb(self) -> float:
         """현재 메모리 사용량 (MB)"""

@@ -54,7 +54,7 @@ class FederatedClient:
         print(f"데이터가 저장될 폴더: {self.execution_folder}")
         print(f"JSON 파일이 생성되었습니다: {self.json_file_name}")
         
-        self.result_manager = FLResultManager(base_dir= "../results", execution_folder = self.execution_folder)
+        self.result_manager = FLResultManager(base_dir= "results", execution_folder = self.execution_folder)
         
         # 프로토콜 핸들러 생성
         self.protocol_handler = FLProtocolHandler(
