@@ -294,15 +294,21 @@ def main():
         splitting_info_lines.append(f"    Testing images: {test_count}")
         splitting_info_lines.append(f"    Output: client{client_num}/")
         splitting_info_lines.append("")
-
-    config = {
-        "selected_labels": selected_labels,
-        "num_classes": len(selected_labels) 
-    }
     
     config_filename = os.path.join("..", "Server", "config.json")
     os.makedirs(os.path.dirname(config_filename), exist_ok=True)
-    with open(config_filename, "w", encoding="utf-8") as f:
+    with open(config_filename, 'r', encoding='utf-8') as f:
+        config = json.load(f)
+
+    # 모델 설정 업데이트
+    config['model']['num_classes'] = len(selected_labels) 
+    config['model']['selected_labels'] = selected_labels
+    
+    # config.json 저장
+    config_filename = os.path.join("..", "Server", "config.json")
+    os.makedirs(os.path.dirname(config_filename), exist_ok=True)
+    
+    with open(config_filename, 'w', encoding='utf-8') as f:
         json.dump(config, f, indent=4, ensure_ascii=False)
     print(f"\n설정 파일 저장: {config_filename}")
 

@@ -6,16 +6,12 @@ from tensorflow.keras.layers import (
 )
 from tensorflow.keras.optimizers import Adam
 from models.base_model import BaseGlobalModel
-from config.settings import ModelConfig
 import json
 
-
-with open("config.json", "r") as f:
-    config = json.load(f)
-num_classes, selected_labels = config["num_classes"], config["selected_labels"]
-
 class UNetGlobalModel(BaseGlobalModel):
-    def __init__(self):
+    def __init__(self, num_classes, selected_labels):
+        self.num_classes = num_classes
+        self.selected_labels = selected_labels
         super(UNetGlobalModel, self).__init__()
 
     def build_model(self):
@@ -59,7 +55,7 @@ class UNetGlobalModel(BaseGlobalModel):
         conv7 = Conv2D(64, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv7)
         
         # 출력 레이어
-        outputs = Conv2D(num_classes, 1, activation='softmax')(conv7)
+        outputs = Conv2D(self.num_classes, 1, activation='softmax')(conv7)
         
         model = Model(inputs=inputs, outputs=outputs)
         
@@ -84,6 +80,6 @@ class UNetGlobalModel(BaseGlobalModel):
             metrics=['accuracy']
         )
         
-        print(f"[서버] SYNTHIA용 U-Net 모델 생성 완료 - 입력: (224,224,3), 출력: {num_classes}개 클래스")
+        print(f"[서버] SYNTHIA용 U-Net 모델 생성 완료 - 입력: (224,224,3), 출력: {self.num_classes}개 클래스")
         model.summary()
         return model

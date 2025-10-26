@@ -1,719 +1,60 @@
-import warnings
-warnings.filterwarnings("ignore")
-#author:chunjiong zhang
-#date:2020/07/16
-
-import os
-os.environ["CUDA_VISIBLE_DEVICES"] = ""  # -1 to use CPU
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'  # 0 = all logs, 1 = filter out INFO, 2 = WARNING, 3 = ERROR
-
-from collections import defaultdict
-from typing import Dict, List, Type
-import pickle
-import uuid
-import codecs
-import numpy as np
-import json
-import msgpack
-import msgpack_numpy
-import logging
-import sys
-import time
-from sklearn.metrics.pairwise import cosine_similarity
-from flask import *
-from flask_socketio import SocketIO
-from flask_socketio import *
-
-# tensorflow.keras로 변경
-import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras.models import Sequential, Model, load_model
-from tensorflow.keras.layers import (
-    Input, Dense, Dropout, Flatten, LeakyReLU, Conv1D, BatchNormalization, MaxPooling1D, Activation, GlobalAveragePooling1D,
-    Conv2D, MaxPooling2D, UpSampling2D, concatenate, Conv2DTranspose
-)
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras import backend as K
-
-import random
-import msgpack_numpy#信息编码格式
-# https://github.com/lebedov/msgpack-numpy
-import logging
-from sklearn.preprocessing import MinMaxScaler
-from keras.layers.core import Lambda
-
-logging.basicConfig(
-    level=logging.INFO,
-)
-
-import sys
-#from ranger import Ranger
-import time
-from flask import *
-from flask_socketio import SocketIO#SocketIO是大名鼎鼎的实时通讯库,可以在服务器和页面之间轻松的实现双向实时通讯, 兼容性好,使用方便.多用来制作聊天/直播室, 等需要实时传输数据的地方.
-from flask_socketio import *
-# https://flask-socketio.readthedocs.io/en/latest/
-import re
-import requests
-import time
 import threading
+import time
+from flask import Flask
+from communication.mobius_handler import MobiusHandler
+from communication.mobius_routes import create_mobius_routes
+from communication.api_routes import create_api_routes
+from federated.protocol_handler import FLProtocolHandler
+from models.unet_model import UNetGlobalModel
+import json
+import time
 
-MOBIUS_URL = "http://mobius:7579"
-HEADERS = {
-    "X-M2M-Origin": "SOrigin",
-    "X-M2M-RI": "12345",
-    "Content-Type": "application/json"
-}
+class FLServer:
+    def __init__(self, global_model, config):
 
-SUB_CNT_List = []
-
-# 컨테이너 이름 , 이름/set == 토픽
-PUB_CNT_List = []
-
-HOST = "server"
-PORT = 5011
-
-with open("config.json", "r") as f:
-    config = json.load(f)
-num_classes, selected_labels = config["num_classes"], config["selected_labels"]
-
-class GlobalModel(object):#类文档字符串
-    """docstring for GlobalModel"""
-    def __init__(self):#__init__()方法是一种特殊的方法，被称为类的构造函数或初始化方法，当创建了这个类的实例时就会调用该方法
-        self.model = self.build_model()#self 代表类的实例，self 在定义类的方法时是必须有的，虽然在调用时不必传入相应的参数。
-        self.current_weights = self.model.get_weights()
-        # for convergence check
-        self.prev_train_loss = None
-
-        # all rounds; losses[i] = [round#, timestamp, loss]
-        # round# could be None if not applicable
-        self.train_losses = []
-        self.valid_losses = []
-        self.train_accuracies = []
-        self.valid_accuracies = []
-        self.training_start_time = int(round(time.time()))#以cluster节点的时间为基准
-    
-    # def build_model(self):
-    #     raise NotImplementedError()#raise可以实现报出错误的功能,而此时产生的问题分类是NotImplementedError。
-    #
-    # # client_updates = [(w, n)..]
-    def update_weights(self, client_weights, client_sizes):
-        """
-        Update current_weights using a weighted average of client_weights.
-        """
-        new_weights = [np.zeros_like(w, dtype=np.float32) for w in self.current_weights]
-        total_size = np.sum(client_sizes)
-
-        for c in range(len(client_weights)):
-            if isinstance(client_weights[c], str):
-                client_weight_obj = pickle_string_to_obj(client_weights[c])
-            else:
-                client_weight_obj = client_weights[c]
-            for i in range(len(new_weights)):
-                w_client = client_weight_obj[i]
-                if not isinstance(w_client, np.ndarray):
-                    w_client = np.array(w_client, dtype=np.float32)
-                elif w_client.dtype != np.float32:
-                    w_client = w_client.astype(np.float32)
-                new_weights[i] += w_client * client_sizes[c] / total_size
-
-        self.current_weights = new_weights
-
-    def aggregate_loss_accuracy(self, client_losses, client_sizes):
-        total_size = np.sum(client_sizes)
-        print("-----client sizes-------", client_sizes)
-        print('\033[1;35;0m client_losses \033[0m', client_losses)
-        aggr_loss = np.sum(client_losses[i] / total_size * client_sizes[i]
-                           for i in range(len(client_sizes)))
-        return aggr_loss
-
-    def aggregate_train_loss_accuracy(self, client_losses, client_sizes, cur_round):
-        cur_time = int(round(time.time())) - self.training_start_time
-        aggr_loss = self.aggregate_loss_accuracy(client_losses, client_sizes)
-        self.train_losses.append([cur_round, cur_time, aggr_loss])
-        with open('stats.txt', 'w') as outfile:
-            json.dump(self.get_stats(), outfile)
-        return aggr_loss
-
-    def get_stats(self):
-        return {
-            "train_loss": self.train_losses,
-            "valid_loss": self.valid_losses,
-            "train_accuracy": self.train_accuracies,
-            "valid_accuracy": self.valid_accuracies
-        }
-
-class GlobalModel_CICIDS(GlobalModel):
-    def __init__(self):
-        super(GlobalModel_CICIDS, self).__init__()
-
-    def build_model(self):
-        """
-        SYNTHIA Semantic Segmentation을 위한 U-Net 모델
-        """
-        # config.json에서 클래스 수 읽기
-        with open('config.json', 'r') as f:
-            config = json.load(f)
-        num_classes = config['num_classes']
+        self.host = config.host
+        self.port = config.port
         
-        inputs = Input((256, 256, 3))
+        # 글로벌 모델
+        self.global_model = global_model(config.num_classes, config.selected_labels)
         
-        # Encoder (다운샘플링)
-        conv1 = Conv2D(64, 3, activation='relu', padding='same', kernel_initializer='he_normal')(inputs)
-        conv1 = Conv2D(64, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv1)
-        pool1 = MaxPooling2D(pool_size=(2, 2))(conv1)
+        self.mobius_handler = MobiusHandler(config)
         
-        conv2 = Conv2D(128, 3, activation='relu', padding='same', kernel_initializer='he_normal')(pool1)
-        conv2 = Conv2D(128, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv2)
-        pool2 = MaxPooling2D(pool_size=(2, 2))(conv2)
-        
-        conv3 = Conv2D(256, 3, activation='relu', padding='same', kernel_initializer='he_normal')(pool2)
-        conv3 = Conv2D(256, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv3)
-        pool3 = MaxPooling2D(pool_size=(2, 2))(conv3)
-        
-        # Bottom
-        conv4 = Conv2D(512, 3, activation='relu', padding='same', kernel_initializer='he_normal')(pool3)
-        conv4 = Conv2D(512, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv4)
-        
-        # Decoder (업샘플링)
-        up5 = UpSampling2D(size=(2, 2))(conv4)
-        merge5 = concatenate([conv3, up5], axis=3)
-        conv5 = Conv2D(256, 3, activation='relu', padding='same', kernel_initializer='he_normal')(merge5)
-        conv5 = Conv2D(256, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv5)
-        
-        up6 = UpSampling2D(size=(2, 2))(conv5)
-        merge6 = concatenate([conv2, up6], axis=3)
-        conv6 = Conv2D(128, 3, activation='relu', padding='same', kernel_initializer='he_normal')(merge6)
-        conv6 = Conv2D(128, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv6)
-        
-        up7 = UpSampling2D(size=(2, 2))(conv6)
-        merge7 = concatenate([conv1, up7], axis=3)
-        conv7 = Conv2D(64, 3, activation='relu', padding='same', kernel_initializer='he_normal')(merge7)
-        conv7 = Conv2D(64, 3, activation='relu', padding='same', kernel_initializer='he_normal')(conv7)
-        
-        # 출력 레이어
-        outputs = Conv2D(num_classes, 1, activation='softmax')(conv7)
-        
-        model = Model(inputs=inputs, outputs=outputs)
-        
-        # ignore 레이블 처리를 위한 커스텀 손실 함수
-        def custom_sparse_categorical_crossentropy(y_true, y_pred):
-            # ignore 레이블 (255)을 마스크 처리
-            mask = tf.not_equal(y_true, 255)
-            
-            # 유효한 픽셀만 선택
-            y_true_masked = tf.boolean_mask(y_true, mask)
-            y_pred_masked = tf.boolean_mask(y_pred, mask)
-            
-            # 표준 sparse categorical crossentropy 적용
-            loss = tf.keras.losses.sparse_categorical_crossentropy(y_true_masked, y_pred_masked)
-            
-            return tf.reduce_mean(loss)
-        
-        optimizer = Adam(learning_rate=0.0001)
-        model.compile(
-            loss=custom_sparse_categorical_crossentropy,
-            optimizer=optimizer,
-            metrics=['accuracy']
+        # 연합학습 프로토콜 핸들러
+        self.protocol_handler = FLProtocolHandler(
+            self.global_model,
+            self.mobius_handler,
+            config
         )
         
-        print(f"[서버] SYNTHIA용 U-Net 모델 생성 완료 - 입력: (224,224,3), 출력: {num_classes}개 클래스")
-        model.summary()
-        return model
-
-class FLServer(object):
-    MIN_NUM_WORKERS = 2#最少节点数量设置
-    MAx_NUM_ROUNDS = 10#设定联邦循环次数
-    NUM_CLIENTS_CONTACTED_PER_ROUND = 2#设置节点数量，作用，多少比例的掉队。
-    ROUNDS_BETWEEN_VALIDATIONS = 2
-    WINDOW_SIZE = 2
-
-    def __init__(self, global_model, host, port):
-        self.global_model = global_model()
-        self.ready_client_sids = set()
-        self.model_id = str(uuid.uuid4())#uuid4()——基于随机数,由伪随机数得到，有一定的重复概率，该概率可以计算出来。
-      
-        #####
-        # training states
-        self.current_round = 0  # -1 for not yet started
-        self.current_round_client_updates = []
-        self.eval_client_updates = []
-        #####
-        
-        self.host = host
-        self.port = port
+        # Flask 앱
         self.app = Flask(__name__)
-        self.app.add_url_rule('/notify', 'notify', self.notify, methods=['POST'])
-        self.app.add_url_rule('/aeWatcher', 'aeWatcher', self.aeWatcher, methods=['POST'])
-        self.app.add_url_rule('/aeSub', 'aeSub', self.aeSub, methods=['POST'])  
-                
-        @self.app.route('/')
-        def dashboard():
-            """测试页面"""
-            return render_template('dashboard.html')
-
-        @self.app.route('/stats')
-        def status_page():
-            return json.dumps(self.global_model.get_stats())        
-        
-        # 아래를 추가하여 healthcheck 엔드포인트를 구성합니다.
-        @self.app.route('/health')
-        def health_check():
-            # 필요한 경우 추가적인 체크 로직을 여기에 넣을 수 있습니다.
-            return jsonify({"status": "ok"}), 200
-        
-    # Mobius를 구독해서 ae 감지
-    def create_aeWatcher(self):
-        # 구독 요청 데이터
-        payload = {
-            "m2m:sub": {
-                "rn": "aeWatcher",  # 구독 이름
-                "nu": [f"http://{self.host}:{self.port}/aeWatcher"],  # 알림을 받을 서버 URL
-                "nct": 2,  # 알림 내용 형식 (전체 콘텐츠)
-                "enc": {
-                    "net": [1,2,3,4]  # 이벤트 조건: 데이터 생성
-                },
-            }
-        }
-        
-        url = MOBIUS_URL + '/Mobius'
-        headers = HEADERS
-        headers["Content-Type"] = "application/json; ty=23"
-
-        try:
-            # POST 요청으로 구독 생성
-            response = requests.post(url, headers=headers, json=payload)
-
-            if response.status_code == 201:
-                print("aeWatcher created successfully!")
-            else:
-                print(f"Failed to create aeWatcher: {response.status_code}, {response.text}")
-
-        except Exception as e:
-            print(f"Error creating aeWatcher: {e}")
-
-    # ae 구독
-    def create_aeSub(self,path):
-        # Mobius 서버 및 리소스 경로 설정
+        self._register_routes()
     
-        # 구독 요청 데이터
-        payload = {
-            "m2m:sub": {
-                "rn": "aeSub",  # 구독 이름
-                "nu": [f"http://{self.host}:{self.port}/aeSub"],  # 알림을 받을 서버 URL
-                "nct": 2,  # 알림 내용 형식 (전체 콘텐츠)
-                "enc": {
-                    "net": [1,2,3,4]  # 이벤트 조건: 데이터 생성
-                },
-                "exc": 100  # 최대 알림 횟수
-            }
-        }
-
-        mobius_url = MOBIUS_URL + '/Mobius/' + path 
-        headers = HEADERS
-        headers["Content-Type"] = "application/json; ty=23"
+    def _register_routes(self) -> None:
+        """엔드포인트 등록"""
+        # Mobius 엔드포인트
+        mobius_bp = create_mobius_routes(self)
+        self.app.register_blueprint(mobius_bp)
         
-        try:
-            # POST 요청으로 구독 생성
-            response = requests.post(mobius_url, headers=HEADERS, json=payload)
-
-            if response.status_code == 201:
-                print("aeSub created successfully!: ", path)
-            else:
-                print(f"Failed to create aeSub: {response.status_code}, {response.text}")
-
-        except Exception as e:
-            print(f"Error creating aeSub: {e}")
-
-    # 컨테이너 구독
-    def create_cntSub(self,path,content):
-        SUB_CNT_List.append(content)
-        # Mobius 서버 및 리소스 경로 설정
+        # API 엔드포인트
+        api_bp = create_api_routes(self)
+        self.app.register_blueprint(api_bp)
+        
+        print("All routes registered")
     
-        # 구독 요청 데이터
-        payload = {
-            "m2m:sub": {
-                "rn": "cntSub",  # 구독 이름
-                "nu": [f"http://{self.host}:{self.port}/notify"],  # 알림을 받을 서버 URL
-                "nct": 2,  # 알림 내용 형식 (전체 콘텐츠)
-                "enc": {
-                    "net": [1,2,3,4]  # 이벤트 조건: 데이터 생성
-                },
-                "exc": 100  # 최대 알림 횟수
-            }
-        }
-
-        mobius_url = MOBIUS_URL + '/' + path 
-        headers = HEADERS
-        headers["Content-Type"] = "application/json; ty=23"
-        
-        try:
-            # POST 요청으로 구독 생성
-            response = requests.post(mobius_url, headers=HEADERS, json=payload)
-
-            if response.status_code == 201:
-                print("cntSub created successfully!: ", path)
-            else:
-                print(f"Failed to create cntSub: {response.status_code}, {response.text}")
-
-        except Exception as e:
-            print(f"Error creating cntSub: {e}")
-
-    def publish(self, path, data):
-        payload = {
-            "m2m:cin": {
-                "con": data,   
-            }
-        }
-        print("publish path: ", path)
-        url = MOBIUS_URL + '/Mobius/FLIoT/' + path
-        headers = HEADERS
-        headers["Content-Type"] = "application/json; ty=4"
-
-        try:
-            response = requests.post(url, headers=headers, json=payload)
-
-            if response.status_code == 201:
-                print("Publish successfully!", url)
-            else:
-                print(f"Failed to Publish: {response.status_code}, {response.text}")
-
-        except Exception as e:
-            print(f"Error publishing: {e}")
     
-    # aeWatcher 알림 엔드포인트
-    def aeWatcher(self):
-        try:
-            data = request.json
-            print("Received AE:")
-
-            if "m2m:sgn" in data:
-                # rn인지 ri인지 선택해야 함
-                content = data["m2m:sgn"]["nev"]["rep"]["m2m:ae"]["rn"]
-                print(f"New AE detected(rn): {content}")
-                self.create_aeSub(content)
-                
-            return jsonify({"status": "received"}), 200
-
-        except Exception as e:
-            print(f"Error processing notification: {e}")
-            return jsonify({"status": "error", "message": str(e)}), 500
-
-    # aeSub 알림 엔드포인트
-    def aeSub(self):
-        try:
-            data = request.json
-            print("Received Container:")
-
-            if "m2m:sgn" in data:
-                # rn인지 ri인지 선택해야 함
-                content = data["m2m:sgn"]["nev"]["rep"]["m2m:cnt"]["rn"]
-                print(f"New CNT detected(rn): {content}")
-                url = data["m2m:sgn"]['sur']
-                url = url[:url.rfind('/')+1]
-                
-                if content[len(content)-1] == 'S':
-                    PUB_CNT_List.append(content)
-                elif content[len(content)-1] == 'C':
-                    self.create_cntSub(url + content, content)
-                
-            return jsonify({"status": "received"}), 200
-
-        except Exception as e:
-            print(f"Error processing notification: {e}")
-            return jsonify({"status": "error", "message": str(e)}), 500
-
-    # 데이터 엔드포인트
-    def notify(self):
-        try:
-            # Mobius에서 전송된 알림 데이터
-            data = request.json
-            print("Received Notification:")
-
-            # 알림 데이터에서 콘텐츠 추출
-            if "m2m:sgn" in data:
-                content = data["m2m:sgn"]["nev"]["rep"]["m2m:cin"]["con"]
-                #print("Updated Content: ", content)   
-                
-                url = data["m2m:sgn"]['sur']
-                client_id = url.split('/')[2].replace("FromC", "")
-                self.on_message(content, client_id)
-
-            return jsonify({"status": "received"}), 200
-
-        except Exception as e:
-            print(f"Error processing notification: {e}")
-            return jsonify({"status": "error", "message": str(e)}), 500
-    
-    # def on_connect(self, userdata, flags, connection):
-    #     if connection == 0:
-    #         print(f"Connected")
-    #     else:
-    #         print(f"Failed to connect, return code {connection}")
-
-    # def on_disconnect(self):
-    #     print("Disconnected from MQTT Broker")
-
-    def on_message(self, msg, client_id):
-        payload = json.dumps(msg);
-        
-        try:
-            # JSON 처리 시도
-            payload = json.loads(payload)
-           # print("Detected JSON format:", payload)
-        except Exception as e:
-            print(f"on_message Error: {e}")
-            # try:
-            #     # Pickle 처리 시도
-            #     payload = pickle.loads(msg.payload)
-            # #  print("Detected Pickle format:", payload)
-            #     print(payload)
-            # except Exception as e:
-            #     print(f"Failed to process message: {e}")
-     
-        if client_id:
-            self.register_handles(payload, client_id)       
-        else :
-            print("none exist client_id!!")
-             
-    def register_handles(self, payload, client_id):
-        # single-threaded async, no need to lock
-        
-        event = payload['event']
-            
-        if event == 'connect':
-            print(client_id, "connected")# # request.sid,,,io客户端的sid, socketio用此唯一标识客户端.
-            print('\033[1;35;0m connected \033[0m')
-            self.ready_client_sids.add(client_id)
-            
-        elif event == 'reconnect':
-            print(client_id, "reconnect")
-            self.ready_client_sids.add(client_id)
-            
-        elif event == 'disconnect':
-            print(client_id, "disconnected")
-            if client_id in self.ready_client_sids:
-                self.ready_client_sids.remove(client_id)
-                
-        elif event == 'client_wake_up':
-            print("client wake_up: ", client_id)
-            data = {
-                'event': 'init', 
-                'payload': {
-                    'model_json': self.global_model.model.to_json(),
-                    'model_id': self.model_id,
-                    'num_classes': num_classes,
-                    'selected_labels': selected_labels,
-
-                    #'data_split': (0.6, 0.3, 0.1), # train, test, valid
-                    'epoch_per_round': 1,
-                    'batch_size': 2
-                }
-            }
-            self.publish(client_id+'FromS', data)
-                        
-        elif event == 'client_ready':
-            data = payload['payload']
-            print("client ready for training", client_id, data)
-            self.ready_client_sids.add(client_id)
-            
-            #################################################
-            ############ Delete if occurs error #############
-            #################################################
-            
-            data={
-                'event': 'global_update',
-                'payload': {
-                    'num_classes': num_classes,
-                    'selected_labels': selected_labels,
-                    'model_json': self.global_model.model.to_json(),
-                    'model_id': self.model_id,
-                    'current_weights': obj_to_pickle_string(self.global_model.current_weights),
-                    'weights_format': 'pickle',
-                }
-            }
-            self.publish(client_id+'FromS', data)
-            
-            #################################################
-            ############ Delete if occurs error #############
-            #################################################
-
-            if len(self.ready_client_sids) >= FLServer.MIN_NUM_WORKERS and self.current_round == 0:
-                self.train_next_round()
-                
-        elif event == 'client_update':
-            data = payload['payload']
-            print("received client update of bytes: ", sys.getsizeof(data))
-            print("handle client_update", client_id)
-            print('\033[1;35;0m handle client_update \033[0m')
-            if data['round_number'] == self.current_round:
-                self.current_round_client_updates.append(data)
-
-                if len(self.current_round_client_updates) >= FLServer.NUM_CLIENTS_CONTACTED_PER_ROUND:
-                    # All selected clients for this round have replied.
-                    self.global_model.update_weights(
-                        [x['weights'] for x in self.current_round_client_updates],
-                        [x['train_size'] for x in self.current_round_client_updates],
-                    )
-
-                    aggr_train_loss = self.global_model.aggregate_train_loss_accuracy(
-                        [x['train_loss'] for x in self.current_round_client_updates],
-                        [x['train_size'] for x in self.current_round_client_updates],
-                        self.current_round
-                    )
-
-                    print("Aggregated training loss:", aggr_train_loss)
-
-                    # New convergence checking logic:
-                    if len(self.global_model.train_losses) >= (2 * FLServer.WINDOW_SIZE):
-                        # Get the last WINDOW_SIZE losses and the previous WINDOW_SIZE losses.
-                        last_window = [entry[2] for entry in self.global_model.train_losses[-FLServer.WINDOW_SIZE:]]
-                        prev_window = [entry[2] for entry in self.global_model.train_losses[-(2 * FLServer.WINDOW_SIZE):-FLServer.WINDOW_SIZE]]
-                        avg_recent = sum(last_window) / FLServer.WINDOW_SIZE
-                        avg_previous = sum(prev_window) / FLServer.WINDOW_SIZE
-                        print("Average loss for last", FLServer.WINDOW_SIZE, "rounds:", avg_recent)
-                        print("Average loss for previous", FLServer.WINDOW_SIZE, "rounds:", avg_previous)
-                        if avg_recent >= avg_previous:
-                            print("Convergence criterion met (recent average loss is not lower than previous average). Triggering evaluation.")
-                            self.stop_and_eval()
-                            return
-
-                    # if self.current_round >= FLServer.MAx_NUM_ROUNDS:
-                    #     print("Maximum rounds reached. Triggering evaluation.")
-                    #     self.stop_and_eval()
-                    # else:
-                    #     self.train_next_round()
-                    
-                    if self.current_round == FLServer.MAx_NUM_ROUNDS:
-                        print("Maximum rounds reached. Triggering evaluation.")
-                        self.stop_and_eval()
-                    else:
-                        self.train_next_round()
-
-                    self.current_round_client_updates = []
-                    
-        elif event == 'client_eval':
-            data = payload['payload']
-            if self.eval_client_updates is None:
-                return
-            print("handle client_eval", client_id)
-            print("eval_resp", data)
-            self.eval_client_updates += [data]
-
-            print('\033[1;35;0m == done == \033[0m')  # 有高亮 或者 print('\033[1;35m字体有色，但无背景色 \033[0m')
-            # If the response contains a 'round_number', then it is an intermediate evaluation.
-            if 'round_number' in data:
-                round_number = data['round_number']
-                print("Performance over the testing data set after round {}:".format(round_number))
-            else:
-                # Otherwise, training is complete. Print total training time cost.
-                total_training_time = time.time() - self.global_model.training_start_time
-                print('Total training time cost:', total_training_time)
-      
-            self.eval_client_updates = None  # Prevent further evaluation
-
-    # Note: we assume that during training thlen(e #workers will be >= MI)N_NUM_WORKERS
-    def train_next_round(self):
-        self.current_round += 1
-        # buffers all client updates
-        self.current_round_client_updates = []
-
-        print("### Round ", self.current_round, "###")
-        
-        #################################################
-        ############ Delete if occurs error #############
-        #################################################
-        
-        for rid in list(self.ready_client_sids):
-            data = {
-                'event': 'global_update',
-                'payload': {
-                    'num_classes': num_classes,
-                    'selected_labels': selected_labels,
-                    'model_json': self.global_model.model.to_json(),
-                    'model_id': self.model_id,
-                    'current_weights': obj_to_pickle_string(self.global_model.current_weights),
-                    'weights_format': 'pickle',
-                }
-            }
-            self.publish(rid+'FromS', data)
-        print("Broadcasted global update to all ready clients.")
-        
-        client_sids_selected = random.sample(list(self.ready_client_sids), FLServer.NUM_CLIENTS_CONTACTED_PER_ROUND)#为了提取出N个不同元素的样本用来(所有内容，需要的数量)
-        print("request updates from", client_sids_selected)
-
-        #################################################
-        ############ Delete if occurs error #############
-        #################################################
-
-
-        # by default each client cnn is in its own "room"
-        for rid in client_sids_selected:
-            data = {
-                'event': 'request_update', 
-                'payload' : {
-                    'model_id': self.model_id,
-                    'round_number': self.current_round,
-                    'current_weights': obj_to_pickle_string(self.global_model.current_weights),
-
-                    'weights_format': 'pickle',
-                    'run_validation': self.current_round % FLServer.ROUNDS_BETWEEN_VALIDATIONS == 0,
-                }
-            }
-            self.publish(rid+'FromS', data)
-            
-        #################################################
-        ############ Delete if occurs error #############
-        #################################################
-
-        if self.current_round % FLServer.ROUNDS_BETWEEN_VALIDATIONS == 0:
-            print("Round {} is a validation round; requesting evaluation from all clients.".format(self.current_round))
-            self.request_eval()
-
-        #################################################
-        ############ Delete if occurs error #############
-        #################################################
-
-
-    def stop_and_eval(self):
-        #self.global_model.save("global_model.h5")
-        self.eval_client_updates = []
-        # self.stop_training = True  # 종료 플래그 설정
-        for rid in self.ready_client_sids:
-            data = {
-                'event': 'stop_and_eval',
-                'payload':  {
-                    'model_id': self.model_id,
-                    'current_weights': obj_to_pickle_string(self.global_model.current_weights),
-                    'weights_format': 'pickle'
-                }
-            }
-            self.publish(rid+'FromS', data)
-
-    def request_eval(self):
-        for rid in self.ready_client_sids:
-            data = {
-                'event': 'request_eval',
-                'payload': {
-                    'model_id': self.model_id,
-                    'round_number': self.current_round,
-                    'current_weights': obj_to_pickle_string(self.global_model.current_weights),
-                    'weights_format': 'pickle'
-                }
-            }
-            self.publish(rid+'FromS', data)
-
     def start_flask(self):
         print(f"Starting Flask server at {self.host}:{self.port}...")
         self.app.run(host=self.host, port=self.port)
-
+        
     def start(self):
         flask_thread = threading.Thread(target=self.start_flask)
         flask_thread.daemon = True  # 메인 스레드가 종료되면 Flask 스레드도 종료
         flask_thread.start()
         
         time.sleep(1) 
-        self.create_aeWatcher()
+        self.mobius_handler.create_aeWatcher()
 
         # 서버 실행 유지
         while True:
@@ -722,18 +63,67 @@ class FLServer(object):
             except KeyboardInterrupt:
                 print("Shutting down FLServer...")
                 break
-
-def obj_to_pickle_string(x):
-    return codecs.encode(pickle.dumps(x), "base64").decode()
-    # return msgpack.packb(x, default=msgpack_numpy.encode)
-    # TODO: compare pickle vs msgpack vs json for serialization; tradeoff: computation vs network IO
-
-def pickle_string_to_obj(s):
-    return pickle.loads(codecs.decode(s.encode(), "base64"))
-    # return msgpack.unpackb(s, object_hook=msgpack_numpy.decode)
+        
+class SimpleConfig:
+    def __init__(self, config_dict):
+        # Model
+        self.num_classes = config_dict['model']['num_classes']
+        self.selected_labels = config_dict['model']['selected_labels']
+        # self.input_shape = tuple(config_dict['model'].get('input_shape', [256, 256, 3]))
+        
+        # Training
+        self.MIN_NUM_WORKERS = config_dict['training']['MIN_NUM_WORKERS']
+        self.MAx_NUM_ROUNDS = config_dict['training']['MAx_NUM_ROUNDS']
+        self.NUM_CLIENTS_CONTACTED_PER_ROUND = config_dict['training']['NUM_CLIENTS_CONTACTED_PER_ROUND']
+        self.ROUNDS_BETWEEN_VALIDATIONS = config_dict['training']['ROUNDS_BETWEEN_VALIDATIONS']
+        self.WINDOW_SIZE = config_dict['training']['WINDOW_SIZE']
+        
+        # Server
+        self.host = config_dict['server']['host']
+        self.port = config_dict['server']['port']
+        
+        # Mobius
+        self.mobius_url = config_dict['mobius']['url']
+        self.mobius_headers = config_dict['mobius']['headers']
+   
+def load_config(config_path="config.json"):
+    with open(config_path, 'r', encoding='utf-8') as f:
+        config_dict = json.load(f)
+    
+    if config_dict['model']['num_classes'] is None:
+        raise ValueError(
+            "num_classes is not set in config.json\n"
+            "Please run preprocessing script first"
+        )
+    
+    if not config_dict['model']['selected_labels']:
+        raise ValueError(
+            "selected_labels is empty in config.json\n"
+            "Please run preprocessing script first"
+        )
+    
+    return SimpleConfig(config_dict)   
+   
+def main():    
+    config = load_config("config.json")
+        
+    server = FLServer(
+        global_model=UNetGlobalModel,
+        config=config
+    )
+    
+    print(f"\nFL Server listening on server:5011")
+    server.start()
 
 if __name__ == '__main__':
-    time_start = time.time()
-    server = FLServer(GlobalModel_CICIDS, HOST, PORT)
-    print(f"listening on ... {HOST}:{PORT}")
-    server.start()
+    start_time = time.time()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nServer stopped by user")
+    except Exception as e:
+        print(f"\nFatal error: {e}")
+        raise
+    finally:
+        elapsed = time.time() - start_time
+        print(f"Total runtime: {elapsed:.2f} seconds")

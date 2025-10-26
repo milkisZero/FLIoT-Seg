@@ -9,11 +9,11 @@ from typing import List, Dict
 # }
 
 class MobiusHandler:    
-    def __init__(self, mobius_url: str, headers: Dict, HOST, PORT):
-        self.MOBIUS_URL = mobius_url
-        self.HEADERS = headers
-        self.host = HOST
-        self.port = PORT
+    def __init__(self, config):
+        self.MOBIUS_URL = config.mobius_url
+        self.HEADERS = config.mobius_headers
+        self.host = config.host
+        self.port = config.port
         
         # 구독 목록
         self.sub_cnt_list: List[str] = []
