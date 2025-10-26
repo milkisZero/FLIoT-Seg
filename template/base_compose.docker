@@ -65,6 +65,10 @@ services:
         ipv4_address: ${DOCKER_NETWORK}2
     volumes:
       - ./Server/fl_server.py:/app/fl_server.py
+      - ./Server/models:/app/models
+      - ./Server/communication:/app/communication
+      - ./Server/utils:/app/utils
+      - ./Server/federated:/app/federated
       - ./Server/config.json:/app/config.json
     depends_on:
       mobius:
