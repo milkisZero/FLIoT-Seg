@@ -112,7 +112,7 @@ def collect_synthia_pairs_with_trainIds(data_dir: str) -> List[Tuple[str, str]]:
 
 def main():
     # 출력 폴더
-    output_folder = "SYNTHIA_Splitted"
+    output_folder = "../Client/SYNTHIA_Splitted"
     
     if os.path.isdir(output_folder):
         shutil.rmtree(output_folder)
