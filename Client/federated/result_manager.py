@@ -13,7 +13,7 @@ from typing import Optional, Dict, Any
 class FLResultManager:
     """Federated Learning 실험 결과를 저장하고 관리하는 클래스"""
     
-    def __init__(self, execution_folder,  base_dir: str = "results"):
+    def __init__(self, execution_folder, device,  base_dir: str = "results"):
         """
         Args:
             base_dir: 결과를 저장할 기본 디렉토리 (기본값: "results")
@@ -23,7 +23,7 @@ class FLResultManager:
         self.execution_folder = execution_folder
             
         # 디바이스 확인 (GPU/CPU)
-        self.device = self._detect_device()
+        self.device = device
         
         # JSON 파일 경로 설정
         # 예: results/gpu/20231026_123456.json
@@ -42,12 +42,6 @@ class FLResultManager:
         print(f"📁 결과 저장 폴더: {self.execution_folder}")
         print(f"📄 JSON 파일 경로: {self.json_file_path}")
         print(f"🖥️  실행 장치: {self.device.upper()}")
-    
-    def _detect_device(self) -> str:
-        """현재 사용 중인 디바이스 감지"""
-        has_gpu = bool(tf.config.list_physical_devices('GPU'))
-        cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES", "") != ""
-        return "gpu" if has_gpu and cuda_visible else "cpu"
     
     def _create_directories(self):
         """필요한 디렉토리 생성"""

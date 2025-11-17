@@ -24,7 +24,9 @@ class FederatedClient:
         self.file_end = False
         self.time_start = time_start
         
-        setup_gpu(gpu_id=0, enable_mixed_precision=True)
+        gpu_id = 0 # if gpu_id == -1, use cpu
+        
+        setup_gpu(gpu_id=gpu_id, enable_mixed_precision=True)
         
         # TCP 클라이언트 생성 (원본 로직 분리)
         self.tcp_client = TCPClient(server_host, server_port)
@@ -43,7 +45,8 @@ class FederatedClient:
         
         # JSON 파일 생성 (원본 그대로)
         import tensorflow as tf
-        device = "gpu" if tf.config.list_physical_devices("GPU") and os.environ.get("CUDA_VISIBLE_DEVICES", "") != "" else "cpu"
+        device = "gpu" if tf.config.list_physical_devices("GPU") and gpu_id != -1 else "cpu"
+        
         self.json_file_name = os.path.join("results", device, f"{self.execution_folder}.json")
         if not os.path.exists(os.path.dirname(self.json_file_name)):
             os.makedirs(os.path.dirname(self.json_file_name))
@@ -54,7 +57,7 @@ class FederatedClient:
         print(f"데이터가 저장될 폴더: {self.execution_folder}")
         print(f"JSON 파일이 생성되었습니다: {self.json_file_name}")
         
-        self.result_manager = FLResultManager(base_dir= "results", execution_folder = self.execution_folder)
+        self.result_manager = FLResultManager(base_dir= "results", execution_folder = self.execution_folder, device=device)
         
         # 프로토콜 핸들러 생성
         self.protocol_handler = FLProtocolHandler(
