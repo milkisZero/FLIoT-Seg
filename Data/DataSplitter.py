@@ -505,7 +505,7 @@ def main():
     print(f"Client용 남은 데이터: {len(remaining_pairs)}개")
 
     # 4) Global Test / Server 데이터 복사
-    global_test_dir = os.path.join(output_folder, "global_test")
+    global_test_dir = os.path.join(server_output_folder, "global_test")
     server_dir   = os.path.join(server_output_folder, "serverdata")
 
     os.makedirs(global_test_dir, exist_ok=True)
