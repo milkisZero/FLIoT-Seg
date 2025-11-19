@@ -14,3 +14,5 @@ docker-compose.yaml
 Client/build
 Client/dist
 *.spec
+splitting_info.txt
+*.png

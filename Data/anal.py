@@ -3,7 +3,6 @@ import matplotlib.pyplot as plt
 from collections import Counter
 from PIL import Image
 import os
-from datasetLoader import load_synthia_dataset
 
 # SYNTHIA 클래스 이름 매핑
 SYNTHIA_CLASSES = {
