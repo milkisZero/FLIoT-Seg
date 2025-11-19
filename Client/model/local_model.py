@@ -98,7 +98,7 @@ class LocalModel(object):
         self.num_classes = num_classes
         self.selected_Labels = selected_labels
         
-        datasource = load_synthia_dataset(binary=False, object_classes=selected_labels)
+        datasource = load_synthia_dataset(binary=False, object_classes=selected_labels, target_size=model_config['input_shape'])
         self.x_train, self.y_train, self.x_test, self.y_test = datasource
         self.anomaly_threshold = None
         

@@ -619,6 +619,11 @@ def main():
     # 모델 설정 업데이트
     config['model']['num_classes'] = len(selected_labels) 
     config['model']['selected_labels'] = selected_labels
+    # .env에서 INPUT_SHAPE 읽기
+    input_shape_str = os.getenv("INPUT_SHAPE", "256 256 3").strip()
+    # 공백으로 분리하여 정수 리스트로 변환
+    input_shape = [int(x) for x in input_shape_str.split()]
+    config['model']['input_shape'] = input_shape
     
     # config.json 저장
     config_filename = os.path.join("..", "Server", "config.json")

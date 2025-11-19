@@ -4,8 +4,11 @@ import os
 import glob
 from tqdm import tqdm
 
-def load_synthia_dataset(binary=False, object_classes=None, show_progress=True):
-    def _load_images(rgb_dir, label_dir, phase="train"):
+def load_synthia_dataset(target_size, binary=False, object_classes=None, show_progress=True):
+    target_size=tuple(target_size[:2]) 
+    print(f"image size : {target_size}")
+    
+    def _load_images(rgb_dir, label_dir,  phase="train"):
         X, y = [], []
         rgb_files = sorted(glob.glob(os.path.join(rgb_dir, "*.png")))
         total = len(rgb_files)
@@ -30,9 +33,7 @@ def load_synthia_dataset(binary=False, object_classes=None, show_progress=True):
                 iterator.set_postfix(skipped=skipped)
                 continue
 
-            try:
-                target_size = (256, 256) 
-                
+            try:       
                 # RGB 이미지
                 img = np.array(
                     Image.open(rgb_file).convert("RGB").resize(target_size, Image.BILINEAR)

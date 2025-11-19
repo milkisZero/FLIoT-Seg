@@ -9,9 +9,10 @@ from models.base_model import BaseGlobalModel
 import json
 
 class UNetGlobalModel(BaseGlobalModel):
-    def __init__(self, num_classes, selected_labels):
+    def __init__(self, num_classes, selected_labels, input_shape):
         self.num_classes = num_classes
         self.selected_labels = selected_labels
+        self.input_shape = input_shape
         super(UNetGlobalModel, self).__init__()
 
     def build_model(self):
@@ -19,7 +20,7 @@ class UNetGlobalModel(BaseGlobalModel):
         SYNTHIA Semantic Segmentation을 위한 U-Net 모델
         """
         
-        inputs = Input((256, 256, 3))
+        inputs = Input(self.input_shape)
         
         # Encoder (다운샘플링)
         conv1 = Conv2D(64, 3, activation='relu', padding='same', kernel_initializer='he_normal')(inputs)
@@ -84,9 +85,10 @@ class UNetGlobalModel(BaseGlobalModel):
         return model
     
 class UNetLite(BaseGlobalModel):
-    def __init__(self, num_classes, selected_labels):
+    def __init__(self, num_classes, selected_labels, input_shape):
         self.num_classes = num_classes
         self.selected_labels = selected_labels
+        self.input_shape = input_shape
         super(UNetLite, self).__init__()
 
     def build_model(self):
@@ -95,7 +97,7 @@ class UNetLite(BaseGlobalModel):
         """
 
         dropout_rate = 0.1        
-        inputs = Input((256, 256, 3))
+        inputs = Input(self.input_shape)
         
         # Encoder (다운샘플링) - 기존 구조 유지하되 개선
         # Block 1 - 메모리 절약을 위해 64 → 32로 시작

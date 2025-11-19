@@ -78,6 +78,7 @@ class FLProtocolHandler:
                     'model_id': self.model_id,
                     'num_classes': self.config.num_classes,
                     'selected_labels': self.config.selected_labels,
+                    'input_shape': self.config.input_shape,
 
                     #'data_split': (0.6, 0.3, 0.1), # train, test, valid
                     'epoch_per_round': self.config.epoch_per_round,

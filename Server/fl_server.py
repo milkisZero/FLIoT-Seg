@@ -17,7 +17,7 @@ class FLServer:
         self.port = config.port
         
         # 글로벌 모델
-        self.global_model = global_model(config.num_classes, config.selected_labels)
+        self.global_model = global_model(config.num_classes, config.selected_labels, config.input_shape)
         
         self.mobius_handler = MobiusHandler(config)
         
@@ -72,7 +72,7 @@ class SimpleConfig:
         self.selected_labels = config_dict['model']['selected_labels']
         self.epoch_per_round = config_dict['model']['epoch_per_round']
         self.batch_size = config_dict['model']['batch_size']
-        # self.input_shape = tuple(config_dict['model'].get('input_shape', [256, 256, 3]))
+        self.input_shape = tuple(config_dict['model'].get('input_shape', [256, 256, 3]))
         
         # Training
         self.MIN_NUM_WORKERS = config_dict['training']['MIN_NUM_WORKERS']
