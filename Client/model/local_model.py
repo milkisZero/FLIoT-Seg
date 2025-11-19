@@ -141,9 +141,7 @@ class LocalModel(object):
 
     def evaluate1(self, round_number=None, save_overlays=True, num_samples=8, alpha=0.5):
         """
-        세그멘테이션 평가 (ignore=255 무시): mIoU, PixelAcc 계산
-        + (옵션) 예측 오버레이 파일 저장 (evaluate1에서만)
-        반환값은 기존 인터페이스 호환을 위해 (miou, pixel_acc, 0.0) 사용
+        세그멘테이션 평가 (ignore=255 무시)
         """
         # 클래스 수/팔레트
         try:
@@ -157,14 +155,27 @@ class LocalModel(object):
         total_correct = 0
         total_labeled = 0
 
-        # 배치 추론 및 누적
+        total_loss = 0.0
+        num_batches = 0
+
         bs_eval = 4
         for i in range(0, len(self.x_test), bs_eval):
-            xb = self.x_test[i:i+bs_eval].astype(np.float32)  # (B,256,256,3), [0,1]
-            yb = self.y_test[i:i+bs_eval].astype(np.int32)    # (B,256,256)
+            xb = self.x_test[i:i+bs_eval].astype(np.float32)
+            yb = self.y_test[i:i+bs_eval].astype(np.int32)
 
-            pred = self.model.predict(xb, verbose=0)          # (B,256,256,C)
-            pred_cls = np.argmax(pred, axis=-1).astype(np.int32)  # (B,256,256)
+            pred = self.model.predict(xb, verbose=0)
+
+            # ----- 여기서 batch loss 계산 -----
+            # yb: (B,H,W), pred: (B,H,W,C)
+            batch_loss = loss_sparse_ce_ignore_255(
+                tf.convert_to_tensor(yb),
+                tf.convert_to_tensor(pred)
+            ).numpy()
+            total_loss += batch_loss
+            num_batches += 1
+            # ---------------------------------
+
+            pred_cls = np.argmax(pred, axis=-1).astype(np.int32)
 
             for y_true, y_pred in zip(yb, pred_cls):
                 valid = (y_true != IGNORE_LABEL)
@@ -186,7 +197,10 @@ class LocalModel(object):
         class_iou = total_inter / np.maximum(total_union, 1e-9)
         miou = float(np.mean(class_iou[np.isfinite(class_iou)]))
 
+        test_loss = total_loss / max(num_batches, 1)
+
         print("Segmentation Evaluation:")
+        print(f"  Test Loss: {test_loss:.4f}")
         print(f"  PixelAcc: {pixel_acc:.4f}, mIoU: {miou:.4f}")
 
         # === (여기서만) 오버레이 저장 ===
@@ -210,4 +224,4 @@ class LocalModel(object):
             print(f"[Overlay] 저장: {out_dir} (샘플 {n}장)")
 
         # 인터페이스 호환 (f1, precision, recall 자리)
-        return miou, pixel_acc, 0.0
+        return miou, pixel_acc, test_loss

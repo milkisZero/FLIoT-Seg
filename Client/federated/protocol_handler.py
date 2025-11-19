@@ -134,20 +134,16 @@ class FLProtocolHandler:
         req = args[0]
         event = args[1]
         if(event == 'stop_and_eval'):
-            self.stop_training = True
+            self.stop_training = True      
         if req['weights_format'] == 'pickle':
             weights = pickle_string_to_obj(req['current_weights'])
         with self.eval_lock:
             self.local_model.set_weights(weights)
             
-        round_number=req["round_number"]
-        f1, precision, recall = self.local_model.evaluate1(round_number)
-        self.result_manager.save_eval_result(
-            round_number=round_number,
-            f1=f1,
-            precision=precision,
-            recall=recall
-        )
+        round_number=req["round_number"] if 'round_number' in req else None
+        
+        # 평가지표, 변형 가능 -> F1, precision, recall
+        miou, pixel_acc, test_loss = self.local_model.evaluate1(round_number)
         
         time_end = time.time()
         print('\033[1;35;0m Time cost = %fs \033[0m' % (time_end - self.time_start))
@@ -155,11 +151,10 @@ class FLProtocolHandler:
         
         payload={
             'test_size': self.local_model.x_test.shape[0],
-            #'test_loss': test_loss,
-            #'test_accuracy': test_accuracy
+            'test_loss': test_loss,
+            'test_accuracy': pixel_acc,
+            'round_number' : round_number
         }
-        if 'round_number' in req:
-            payload['round_number'] = req['round_number']
 
         header = b'OPERATE'
         resp = json.dumps({
@@ -169,11 +164,16 @@ class FLProtocolHandler:
         self.tcp_client.send_tcp_message(header, resp)
 
         additional_results = {
-            'f1_score': f1,
-            'precision': precision,
-            'recall': recall
+            'miou': miou,
+            'pixel_acc': pixel_acc,
+            'test_loss': test_loss
         }
         self.tcp_client.send_additional_results(additional_results)
+        
+        self.result_manager.save_eval_result(
+            round_number=round_number,
+            eval_metrics=additional_results
+        )
 
     def on_global_update(self, *args):
         req = args[0]

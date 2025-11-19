@@ -165,20 +165,17 @@ class FLResultManager:
             train_metrics={'loss': loss, 'accuracy': accuracy}
         )
     
-    def save_eval_result(self, round_number: int, f1: float, 
-                        precision: float, recall: float):
+    def save_eval_result(self, round_number: int, eval_metrics: dict):
         """
         평가 결과 저장
         
         Args:
             round_number: 라운드 번호
-            f1: F1 Score
-            precision: Precision
-            recall: Recall
+            eval_metrics: 평가 지표 딕셔너리 (예: {'f1': 0.85, 'precision': 0.88, 'recall': 0.82})
         """
         self.save_round_result(
             round_number=round_number,
-            eval_metrics={'f1': f1, 'precision': precision, 'recall': recall}
+            eval_metrics=eval_metrics
         )
     
     # ========================================
