@@ -8,7 +8,7 @@ SYNTHIA
 node_modules/
 *.csv
 Server/config.json
-results
+results/Client*
 graphs
 docker-compose.yaml
 Client/build
