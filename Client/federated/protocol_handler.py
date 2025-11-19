@@ -1,6 +1,3 @@
-"""
-Federated Learning 프로토콜 핸들러 (원본 메소드 유지)
-"""
 import json
 import time
 from model.local_model import LocalModel
@@ -10,9 +7,7 @@ import numpy as np
 import os
 import threading
 
-class FLProtocolHandler:
-    """원본 FederatedClient의 프로토콜 핸들러 메소드를 그대로 가져옴"""
-    
+class FLProtocolHandler:    
     def __init__(self, tcp_client, time_start, result_manager,execution_folder):
         self.tcp_client = tcp_client
         self.local_model = None
@@ -22,16 +17,10 @@ class FLProtocolHandler:
         self.execution_folder = execution_folder
         self.eval_lock = threading.Lock()
         self.num_classes = None
-        self.selected_labels = None
-        # TCP 클라이언트의 메시지 핸들러로 등록
+        self.selected_labels = NotImplemented
         self.tcp_client.message_handler = self.handle_message
     
-    # ========================================
-    # 원본 메소드 그대로 복사
-    # ========================================
-    
     def handle_message(self, header, message):
-        """원본 라인 144-164 그대로"""
         if header == 'OPERATE':
             event = message['event']
             if event == 'connect':
@@ -54,15 +43,12 @@ class FLProtocolHandler:
                 self.on_file_end()
     
     def on_connect(self):
-        """원본에서 가져옴"""
         print("Connected to server")
     
     def on_disconnect(self):
-        """원본에서 가져옴"""
         print("Disconnected from server")
     
     def on_reconnect(self):
-        """원본에서 가져옴"""
         print("Reconnecting to server")
     
     def on_init(self, *args):
@@ -202,9 +188,7 @@ class FLProtocolHandler:
             self.local_model.set_weights(weights)
     
     def on_classify_packet(self, payload):
-        """패킷 분류 (원본에서 주석 처리됨)"""
         pass
     
     def on_file_end(self):
-        """파일 종료 (원본에서 주석 처리됨)"""
         pass

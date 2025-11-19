@@ -7,9 +7,7 @@ import json
 import pickle
 import time
 
-class TCPClient:
-    """원본 FederatedClient의 TCP 관련 메소드를 그대로 가져옴"""
-    
+class TCPClient:    
     def __init__(self, server_host, server_port):
         self.server_host = server_host
         self.server_port = server_port
@@ -18,18 +16,16 @@ class TCPClient:
         self.message_handle = None
         
     def connect(self):
-        """서버 연결 (원본 __init__에서 가져옴)"""
         try:
             self.tcp_socket.connect((self.server_host, self.server_port))
             self.connected = True
-            print(f"✅ TCP 소켓 연결 성공: {self.server_host}:{self.server_port}")
+            print(f"TCP 소켓 연결 성공: {self.server_host}:{self.server_port}")
             return True
         except Exception as e:
             print("TCP 소켓 연결 실패:", e)
             return False
     
     def disconnect(self):
-        """연결 종료"""
         if self.tcp_socket:
             try:
                 self.tcp_socket.close()
@@ -37,12 +33,7 @@ class TCPClient:
             except:
                 pass
     
-    # ========================================
-    # 원본 메소드 그대로 복사
-    # ========================================
-    
     def send_tcp_message(self, header, message):
-        """원본 라인 343-353 그대로"""
         try:
             if not isinstance(header, bytes):
                 header=header.encode()
@@ -55,7 +46,6 @@ class TCPClient:
             print(f"Error sending message: {e}")
     
     def send_blob_data(self, data, filename):
-        """원본 라인 358-363 그대로"""
         header = b'WEIGHTS'
         blob_data = pickle.dumps(data)
         self.tcp_socket.send(header)
@@ -63,7 +53,6 @@ class TCPClient:
         self.tcp_socket.sendall(blob_data)
     
     def send_additional_metrics(self, metrics):
-        """원본 라인 365-373 그대로"""
         try:
             header = b'METRICS'
             message = json.dumps(metrics)

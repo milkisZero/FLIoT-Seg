@@ -1,7 +1,3 @@
-"""
-Federated Learning 결과 저장 관리
-federated/result_manager.py
-"""
 import os
 import json
 import datetime
@@ -136,10 +132,6 @@ class FLResultManager:
             log_parts.append(f"메모리: {peak_memory:.2f}MB")
         
         print(f"✅ {' | '.join(log_parts)} → {self.json_file_path}")
-    
-    # ========================================
-    # 편의 메서드 (원본 호환)
-    # ========================================
     
     def save_round_time(self, round_number: int, train_time: float, peak_memory: float):
         """
