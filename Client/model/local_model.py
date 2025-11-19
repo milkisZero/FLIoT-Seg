@@ -144,10 +144,8 @@ class LocalModel(object):
         세그멘테이션 평가 (ignore=255 무시)
         """
         # 클래스 수/팔레트
-        try:
-            n_classes = int(self.model.output_shape[-1])
-        except Exception:
-            n_classes = int(np.max(self.y_train[self.y_train != IGNORE_LABEL])) + 1
+        
+        n_classes = self.num_classes
         palette = _make_palette(n_classes)
 
         total_inter = np.zeros(n_classes, dtype=np.float64)
