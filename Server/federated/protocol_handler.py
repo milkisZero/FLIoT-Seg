@@ -92,10 +92,6 @@ class FLProtocolHandler:
             print("client ready for training", client_id, data)
             self.ready_client_sids.add(client_id)
             
-            #################################################
-            ############ Delete if occurs error #############
-            #################################################
-            
             data={
                 'event': 'global_update',
                 'payload': {
@@ -108,10 +104,6 @@ class FLProtocolHandler:
                 }
             }
             self.mobius.publish(client_id+'FromS', data)
-            
-            #################################################
-            ############ Delete if occurs error #############
-            #################################################
 
             if len(self.ready_client_sids) >= self.config.MIN_NUM_WORKERS and self.current_round == 0:
                 self.train_next_round()
@@ -152,12 +144,6 @@ class FLProtocolHandler:
                             print("Convergence criterion met (recent average loss is not lower than previous average). Triggering evaluation.")
                             self.stop_and_eval()
                             return
-
-                    # if self.current_round >= FLServer.MAx_NUM_ROUNDS:
-                    #     print("Maximum rounds reached. Triggering evaluation.")
-                    #     self.stop_and_eval()
-                    # else:
-                    #     self.train_next_round()
                     
                     if self.current_round == self.config.MAx_NUM_ROUNDS:
                         print("Maximum rounds reached. Triggering evaluation.")
@@ -195,10 +181,6 @@ class FLProtocolHandler:
 
         print("### Round ", self.current_round, "###")
         
-        #################################################
-        ############ Delete if occurs error #############
-        #################################################
-        
         for rid in list(self.ready_client_sids):
             data = {
                 'event': 'global_update',
@@ -217,12 +199,6 @@ class FLProtocolHandler:
         client_sids_selected = random.sample(list(self.ready_client_sids), self.config.NUM_CLIENTS_CONTACTED_PER_ROUND)#为了提取出N个不同元素的样本用来(所有内容，需要的数量)
         print("request updates from", client_sids_selected)
 
-        #################################################
-        ############ Delete if occurs error #############
-        #################################################
-
-
-        # by default each client cnn is in its own "room"
         for rid in client_sids_selected:
             data = {
                 'event': 'request_update', 
@@ -237,17 +213,9 @@ class FLProtocolHandler:
             }
             self.mobius.publish(rid+'FromS', data)
             
-        #################################################
-        ############ Delete if occurs error #############
-        #################################################
-
         if self.current_round % self.config.ROUNDS_BETWEEN_VALIDATIONS == 0:
             print("Round {} is a validation round; requesting evaluation from all clients.".format(self.current_round))
             self.request_eval()
-
-        #################################################
-        ############ Delete if occurs error #############
-        #################################################
 
     def stop_and_eval(self):
         #self.global_model.save("global_model.h5")
