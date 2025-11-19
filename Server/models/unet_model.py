@@ -80,7 +80,6 @@ class UNetGlobalModel(BaseGlobalModel):
             metrics=['accuracy']
         )
         
-        print(f"[서버] SYNTHIA용 U-Net 모델 생성 완료 - 입력: (224,224,3), 출력: {self.num_classes}개 클래스")
         model.summary()
         return model
     
@@ -199,6 +198,5 @@ class UNetLite(BaseGlobalModel):
             metrics=['accuracy']
         )
         
-        print(f"[서버] SYNTHIA용 U-Net 모델 생성 완료 - 입력: (224,224,3), 출력: {self.num_classes}개 클래스")
         model.summary()
         return model

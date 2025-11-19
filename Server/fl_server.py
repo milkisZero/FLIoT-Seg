@@ -6,6 +6,7 @@ from communication.mobius_routes import create_mobius_routes
 from communication.api_routes import create_api_routes
 from federated.protocol_handler import FLProtocolHandler
 from models.unet_model import UNetGlobalModel, UNetLite
+from models.DeepLabV3PlusMobileNet import DeepLabV3PlusMobileNet
 import json
 import time
 
@@ -110,7 +111,7 @@ def main():
     config = load_config("config.json")
         
     server = FLServer(
-        global_model=UNetLite,
+        global_model=UNetGlobalModel,
         config=config
     )
     
