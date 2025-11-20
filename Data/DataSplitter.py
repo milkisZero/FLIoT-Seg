@@ -13,7 +13,8 @@ from non_iid_split import (
     NUM_CLASSES,
     compute_class_distribution_in_dir,
     plot_class_distribution_per_client,
-    compute_label_histogram,  # 새로 사용
+    compute_label_histogram,
+    multi_hot_dirichlet_split,  # 🔥 새로운 함수
 )
 
 load_dotenv()
@@ -143,215 +144,41 @@ def collect_synthia_pairs_with_trainIds(data_dir: str) -> List[Tuple[str, str]]:
     print(f"labelTrainIds와 매칭된 쌍: {len(matched)}개 (labelTrainIds 없음: {missing}개)")
     return matched
 
-# ---------------- Dirichlet label-non-iid 관련 함수 추가 ---------------- #
-
-def get_dominant_label_for_image(
-    label_path: str,
-    selected_labels: List[int],
-    num_classes: int = NUM_CLASSES
-) -> Optional[int]:
-    """
-    세그멘테이션 라벨에서 '우세 클래스(dominant class)'를 하나 뽑아 이미지 레이블로 사용.
-    - selected_labels에 포함된 클래스 중에서 픽셀 비율이 가장 큰 클래스를 반환.
-    - selected_labels 픽셀이 전혀 없으면 None 반환.
-    """
-    hist = compute_class_distribution_for_dominant(label_path, num_classes=num_classes)
-
-    if hist is None or hist.sum() == 0:
-        return None
-
-    mask = np.zeros_like(hist, dtype=bool)
-    for cls_id in selected_labels:
-        if 0 <= cls_id < num_classes:
-            mask[cls_id] = True
-
-    if not np.any(mask):
-        return None
-
-    masked_hist = hist.copy()
-    masked_hist[~mask] = 0.0
-    if masked_hist.sum() == 0:
-        return None
-
-    dominant_label = int(np.argmax(masked_hist))
-    return dominant_label
-
-def compute_class_distribution_for_dominant(label_path: str, num_classes: int = NUM_CLASSES) -> Optional[np.ndarray]:
-    hist = compute_label_histogram(label_path, num_classes=num_classes)
-    if hist is None:
-        return None
-
-    # 배경/공통 클래스 제거: void(0), sky(1), building(2), road(3)
-    bg_classes = [0, 1, 2, 3]
-    for c in bg_classes:
-        hist[c] = 0.0
-
-    # 혹시 전부 0이면 dominant를 못 정하므로 None
-    if hist.sum() == 0:
-        return None
-
-    hist /= hist.sum()
-    return hist
-
-
-def dirichlet_label_non_iid_split(
-    matched_pairs: List[Tuple[str, str]],
-    num_clients: int,
-    client_ratios: List[float],
-    selected_labels: List[int],
-    alpha: float,
-    num_classes: int = NUM_CLASSES,
-    random_state: int = 42,
-) -> List[List[Tuple[str, str]]]:
-    """
-    Dirichlet 기반 label-non-iid 분할 (classification에서 많이 쓰는 방식을 세그멘테이션에 적용).
-
-    절차:
-    1) 각 이미지에 대해 dominant label(가장 많이 나온 selected_labels 중 하나)을 정한다.
-    2) 클래스별로 이미지 인덱스 리스트를 만든다.
-    3) 각 클래스에 대해 Dirichlet(alpha)로 클라이언트 비율을 샘플링하고,
-       그 비율에 맞게 이미지 index를 나눈다.
-    4) dominant label이 없는 이미지(선택된 라벨이 전혀 없는 경우)는
-       client_ratios를 고려하여 부족한 클라이언트에 채워 넣는다.
-
-    반환:
-    - client_file_pairs: 길이 num_clients인 리스트
-      각 원소는 [(rgb_path, label_path), ...] 형태
-    """
-    rng = np.random.RandomState(random_state)
-
-    total_files = len(matched_pairs)
-    client_file_indices = [[] for _ in range(num_clients)]
-
-    # 1) 이미지별 dominant label 계산
-    label_to_indices = {cls: [] for cls in selected_labels}
-    unlabeled_indices = []
-
-    print("[Dirichlet] 이미지별 dominant label 계산 중...")
-    for idx, (_, label_path) in enumerate(tqdm(matched_pairs)):
-        dom_label = get_dominant_label_for_image(
-            label_path, selected_labels, num_classes=num_classes
-        )
-        if dom_label is None or dom_label not in label_to_indices:
-            unlabeled_indices.append(idx)
-        else:
-            label_to_indices[dom_label].append(idx)
-
-    print("[Dirichlet] 클래스별 이미지 수:")
-    for cls, idxs in label_to_indices.items():
-        print(f"  class {cls}: {len(idxs)}개")
-
-    # 2) 클래스별 Dirichlet 분할
-    for cls, idxs in label_to_indices.items():
-        if not idxs:
-            continue
-
-        idxs = np.array(idxs)
-        rng.shuffle(idxs)
-
-        # 각 클래스에 대해 Dirichlet(alpha) 샘플
-        proportions = rng.dirichlet(alpha * np.ones(num_clients))
-        split_points = (np.cumsum(proportions) * len(idxs)).astype(int)[:-1]
-        splits = np.split(idxs, split_points)
-
-        for c_idx in range(num_clients):
-            client_file_indices[c_idx].extend(splits[c_idx].tolist())
-
-    # 3) client_ratios 기반 target size 계산
-    target_sizes = [int(round(r * total_files)) for r in client_ratios]
-    diff = total_files - sum(target_sizes)
-    if diff != 0:
-        target_sizes[-1] += diff
-    print("[Dirichlet] Target sizes per client (approx):", target_sizes)
-
-    # 4) dominant label이 없는 이미지들(unlabeled_indices)을 부족한 클라에 채워 넣기
-    current_sizes = [len(idxs) for idxs in client_file_indices]
-    print("[Dirichlet] 현재 사이즈(클래스 기반 분배 후):", current_sizes)
-    print("[Dirichlet] dominant label 없는 이미지 수:", len(unlabeled_indices))
-
-    for idx in unlabeled_indices:
-        deficits = [target_sizes[c] - current_sizes[c] for c in range(num_clients)]
-        if any(d > 0 for d in deficits):
-            c_idx = int(np.argmax(deficits))
-        else:
-            c_idx = int(np.argmin(current_sizes))
-
-        client_file_indices[c_idx].append(idx)
-        current_sizes[c_idx] += 1
-
-    print("[Dirichlet] 최종 클라이언트별 이미지 수:", current_sizes)
-
-    # 5) index → (rgb_path, label_path)로 변환
-    client_file_pairs: List[List[Tuple[str, str]]] = [[] for _ in range(num_clients)]
-    for c_idx in range(num_clients):
-        for idx in client_file_indices[c_idx]:
-            client_file_pairs[c_idx].append(matched_pairs[idx])
-
-    return client_file_pairs
 
 def stratified_train_test_split_per_client(
     file_pairs: List[Tuple[str, str]],
     train_ratio: float,
-    selected_labels: List[int],
-    num_classes: int = NUM_CLASSES,
     random_state: int = 0,
 ) -> Tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
     """
-    한 클라이언트의 file_pairs를 dominant label 기준으로 stratified train/test split.
-    - 각 이미지에 대해 dominant label을 계산 (selected_labels 중에서 가장 많이 나온 클래스)
-    - dominant label(또는 None) 별로 버킷을 나누고, 각 버킷 안에서 train_ratio 비율로 나눔
-    - 버킷이 너무 작은 경우:
-        - len(bucket) > 0 이면 최소 1개는 train에 들어가도록 처리 (train_ratio > 0 가정)
-        - len(bucket) > 1 이고 train_ratio < 1 이면 최소 1개는 test에 남도록 처리
+    한 클라이언트의 file_pairs를 단순 셔플 후 train/test split
+    (Multi-hot에서는 이미 클래스 분포가 고려되었으므로 단순 분할)
     """
     rng = np.random.RandomState(random_state)
-
+    
     if not file_pairs:
         return [], []
-
-    # 1) dominant label 기준으로 인덱스 버킷 생성
-    label_to_indices: dict = {}
-    for idx, (_, label_path) in enumerate(file_pairs):
-        dom_label = get_dominant_label_for_image(
-            label_path, selected_labels, num_classes=num_classes
-        )
-        # selected_labels에 없거나 None이면 별도 버킷(-1)으로 처리
-        key = dom_label if (dom_label in selected_labels) else -1
-        if key not in label_to_indices:
-            label_to_indices[key] = []
-        label_to_indices[key].append(idx)
-
-    train_indices = []
-    test_indices = []
-
-    # 2) 버킷별로 train/test 나누기
-    for key, idxs in label_to_indices.items():
-        idxs = np.array(idxs)
-        rng.shuffle(idxs)
-
-        n = len(idxs)
-        k = int(round(n * train_ratio))
-
-        # 너무 극단 값 방지 (원하면 조정)
-        if train_ratio > 0 and k == 0 and n > 0:
-            k = 1
-        if train_ratio < 1 and k == n and n > 1:
-            k = n - 1
-
-        train_indices.extend(idxs[:k])
-        test_indices.extend(idxs[k:])
-
-    # 3) 전체적으로 한 번 더 섞어줌 (선택)
-    rng.shuffle(train_indices)
-    rng.shuffle(test_indices)
-
+    
+    indices = np.arange(len(file_pairs))
+    rng.shuffle(indices)
+    
+    n = len(file_pairs)
+    k = int(round(n * train_ratio))
+    
+    # 극단값 방지
+    if train_ratio > 0 and k == 0 and n > 0:
+        k = 1
+    if train_ratio < 1 and k == n and n > 1:
+        k = n - 1
+    
+    train_indices = indices[:k]
+    test_indices = indices[k:]
+    
     train_pairs = [file_pairs[i] for i in train_indices]
     test_pairs = [file_pairs[i] for i in test_indices]
-
+    
     return train_pairs, test_pairs
 
-
-# ---------------------------------------------------------------------- #
 
 def main():
     # 출력 폴더
@@ -514,15 +341,14 @@ def main():
     copy_pairs_with_structure(global_pairs, global_test_dir, "global")
     copy_pairs_with_structure(server_pairs, server_dir, "serverdata")
 
-    # ---------------- Dirichlet label-non-iid 분할만 사용 ---------------- #
-    print("\n[분배] Dirichlet 기반 label Non-IID 분배를 사용합니다.")
+    # 🔥 Multi-Hot Dirichlet 분할
+    print("\n[분배] Multi-Hot Dirichlet Non-IID 분배를 사용합니다.")
 
-    base_pairs = partial_shuffle_list(remaining_pairs, shuffle_intensity, random_state=42)
-
+    # Dirichlet alpha 값 입력
     dirichlet_alpha_str = os.getenv("DIRICHLET_ALPHA", "").strip()
     if not dirichlet_alpha_str:
         dirichlet_alpha_str = input(
-            "Dirichlet alpha 값을 입력하세요 (예: 0.5 또는 0.1, 작을수록 더 극단 Non-IID): "
+            "Dirichlet alpha 값을 입력하세요 (예: 1.0, 작을수록 극단 Non-IID): "
         ).strip()
     try:
         dirichlet_alpha = float(dirichlet_alpha_str)
@@ -534,20 +360,35 @@ def main():
 
     print(f"사용할 Dirichlet alpha: {dirichlet_alpha}")
 
-    client_file_pairs = dirichlet_label_non_iid_split(
+    # Multi-hot threshold 입력
+    threshold_str = os.getenv("MULTIHOT_THRESHOLD", "0.01").strip()
+    try:
+        threshold = float(threshold_str)
+        if not (0 < threshold < 1):
+            raise ValueError
+    except ValueError:
+        print("잘못된 threshold 값입니다. 0과 1 사이여야 합니다.")
+        threshold = 0.01
+    
+    print(f"Multi-hot threshold: {threshold}")
+
+    # 셔플 후 분배
+    base_pairs = partial_shuffle_list(remaining_pairs, shuffle_intensity, random_state=42)
+
+    client_file_pairs = multi_hot_dirichlet_split(
         matched_pairs=base_pairs,
         num_clients=num_clients,
         client_ratios=client_ratios,
         selected_labels=selected_labels,
         alpha=dirichlet_alpha,
+        threshold=threshold,
         num_classes=NUM_CLASSES,
         random_state=42,
     )
-    # --------------------------------------------------------------------- #
 
     # 각 클라이언트 처리 및 복사
     splitting_info_lines = []
-    splitting_info_lines.append("SYNTHIA Dataset Splitting Information (labelTrainIds only, Dirichlet non-iid)")
+    splitting_info_lines.append("SYNTHIA Dataset Splitting Information (Multi-Hot Dirichlet Non-IID)")
     splitting_info_lines.append("=========================================================")
     splitting_info_lines.append(f"Data Directory: {data_dir}")
     splitting_info_lines.append(f"Output Folder: {os.path.abspath(output_folder)}")
@@ -560,6 +401,7 @@ def main():
     splitting_info_lines.append(f"Server ratio: {server_ratio} -> {len(server_pairs)} images")
     splitting_info_lines.append(f"Client total for splitting: {len(remaining_pairs)} images")
     splitting_info_lines.append(f"Dirichlet alpha: {dirichlet_alpha}")
+    splitting_info_lines.append(f"Multi-hot threshold: {threshold}")
     splitting_info_lines.append(f"Selected labels: {selected_labels}")
     splitting_info_lines.append("")
 
@@ -574,16 +416,11 @@ def main():
             print(f"  클라이언트 {client_num}에 할당된 데이터가 없습니다.")
             continue
 
-        # 추가 셔플
-        shuffled_pairs_cli = partial_shuffle_list(file_pairs, shuffle_intensity, random_state=42 + i)
-
-        # Stratified Train/Test split (dominant label 기준)
+        # Train/Test split
         train_ratio = train_ratios[i]
         train_pairs, test_pairs = stratified_train_test_split_per_client(
             file_pairs=file_pairs,
             train_ratio=train_ratio,
-            selected_labels=selected_labels,
-            num_classes=NUM_CLASSES,
             random_state=42 + i,
         )
         print(f"  훈련: {len(train_pairs)}개, 테스트: {len(test_pairs)}개")
@@ -598,7 +435,7 @@ def main():
         copy_pairs_with_structure(train_pairs, train_dir, "train")
         copy_pairs_with_structure(test_pairs,  test_dir,  "test")
 
-        # 단순 통계(이미지 개수)
+        # 통계
         train_count = len(train_pairs)
         test_count  = len(test_pairs)
         client_stats.append((client_num, train_count, test_count))
@@ -611,23 +448,24 @@ def main():
         splitting_info_lines.append(f"    Output: client{client_num}/")
         splitting_info_lines.append("")
     
+    # config.json 업데이트
     config_filename = os.path.join("..", "Server", "config.json")
     os.makedirs(os.path.dirname(config_filename), exist_ok=True)
-    with open(config_filename, 'r', encoding='utf-8') as f:
-        config = json.load(f)
+    
+    try:
+        with open(config_filename, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+    except:
+        config = {"model": {}}
 
     # 모델 설정 업데이트
     config['model']['num_classes'] = len(selected_labels) 
     config['model']['selected_labels'] = selected_labels
+    
     # .env에서 INPUT_SHAPE 읽기
     input_shape_str = os.getenv("INPUT_SHAPE", "256 256 3").strip()
-    # 공백으로 분리하여 정수 리스트로 변환
     input_shape = [int(x) for x in input_shape_str.split()]
     config['model']['input_shape'] = input_shape
-    
-    # config.json 저장
-    config_filename = os.path.join("..", "Server", "config.json")
-    os.makedirs(os.path.dirname(config_filename), exist_ok=True)
     
     with open(config_filename, 'w', encoding='utf-8') as f:
         json.dump(config, f, indent=4, ensure_ascii=False)

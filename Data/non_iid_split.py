@@ -8,14 +8,40 @@ import matplotlib.pyplot as plt
 # SYNTHIA TrainIds 0~18 사용 (총 19개)
 NUM_CLASSES = 19
 
+SYNTHIA_CLASSES = {
+    0:  'Road',          # 0  road
+    1:  'Sidewalk',      # 1  sidewalk
+    2:  'Building',      # 2  building
+    3:  'Wall',          # 3  wall
+    4:  'Fence',         # 4  fence
+    5:  'Pole',          # 5  pole
+    6:  'Traffic light', # 6  traffic light
+    7:  'Traffic sign',  # 7  traffic sign
+    8:  'Vegetation',    # 8  vegetation
+    9:  'Terrain',       # 9  terrain
+    10: 'Sky',           # 10 sky
+    11: 'Person',        # 11 person
+    12: 'Rider',         # 12 rider
+    13: 'Car',           # 13 car
+    14: 'Truck',         # 14 truck
+    15: 'Bus',           # 15 bus
+    16: 'Train',         # 16 train
+    17: 'Motorcycle',    # 17 motorcycle
+    18: 'Bicycle',       # 18 bicycle
+}
+
 def compute_label_histogram(label_path, num_classes=NUM_CLASSES):
     """
     개별 라벨 PNG 파일에서 클래스별 픽셀 비율 반환.
     - labelTrainIds 기준, ignore id(255)는 제거
     - 반환: shape (num_classes,), 합 = 1.0
     """
-    with Image.open(label_path) as img:
-        arr = np.array(img)
+    try:
+        with Image.open(label_path) as img:
+            arr = np.array(img)
+    except Exception as e:
+        print(f"Warning: Failed to process {label_path}: {e}")
+        return np.zeros(num_classes, dtype=np.float32)
 
     # 라벨이 HxW 또는 HxWxC인 경우 대응
     if arr.ndim == 3:
@@ -36,186 +62,216 @@ def compute_label_histogram(label_path, num_classes=NUM_CLASSES):
     hist /= hist.sum()
     return hist
 
-def get_default_client_class_prefs(num_clients, num_classes=NUM_CLASSES):
+
+def compute_multi_hot_label(
+    label_path: str,
+    selected_labels: list,
+    threshold: float = 0.01,
+    num_classes: int = NUM_CLASSES
+) -> list:
     """
-    더 극단적인 Non-IID를 위한 클래스 선호 설정
-    """
-    if num_clients == 2:
-        # Client 0: 차량 중심 (Car, Truck, Bicycle, Motorcycle, Traffic sign, Traffic light)
-        # Client 1: 보행자 중심 (Pedestrian, Rider, Sidewalk, Parking-slot)
-        client_prefs = {
-            0: [8, 18, 11, 12, 9, 15],      # 차량 관련
-            1: [10, 17, 4, 13],              # 보행자 관련
-        }
-        return client_prefs
+    이미지에서 threshold 이상 존재하는 모든 selected_labels 클래스 반환
     
-    if num_clients == 3:
-        client_prefs = {
-            0: [8, 18, 12],              # 큰 차량
-            1: [10, 17, 11],             # 사람 & 자전거
-            2: [9, 15, 7, 4],            # 표지판 & 인프라
-        }
-        return client_prefs
-
-    # 일반화: 클래스 인덱스를 연속 구간으로 나눔
-    # 단, 배경 클래스(0~3)는 제외하고 4~18만 분할
-    foreground_classes = np.arange(4, num_classes)
-    splits = np.array_split(foreground_classes, num_clients)
-    client_prefs = {i: list(splits[i]) for i in range(num_clients)}
-    return client_prefs
-
-def assign_non_iid_to_clients(
-    matched_pairs,
-    client_ratios,
-    client_class_prefs,
-    num_classes=NUM_CLASSES,
-    random_state=42,
-):
+    Args:
+        label_path: 라벨 이미지 경로
+        selected_labels: 사용할 클래스 리스트
+        threshold: 클래스가 존재한다고 판단할 최소 픽셀 비율 (기본 1%)
+        num_classes: 전체 클래스 수
+    
+    Returns:
+        이미지에 threshold 이상 존재하는 클래스 리스트
     """
-    픽셀 비율 기반 극단적 Non-IID 분배.
+    hist = compute_label_histogram(label_path, num_classes=num_classes)
+    if hist is None or hist.sum() == 0:
+        return []
+    
+    # threshold 이상인 selected_labels만 추출
+    present_classes = []
+    for cls in selected_labels:
+        if 0 <= cls < num_classes and hist[cls] >= threshold:
+            present_classes.append(cls)
+    
+    return present_classes
 
-    - 각 이미지에 대해 클래스별 픽셀 비율(hist)을 계산
-    - 각 클라이언트는 자신의 선호 클래스(pref)에 해당하는 픽셀 비율 합(pref_ratio)을 점수로 사용
-    - pref_ratio가 큰 클라이언트에 이미지를 우선적으로 할당
-    - 모든 클라이언트에 대해 pref_ratio == 0인 이미지(선호 클래스가 전혀 없는 경우)는
-      마지막에 남는 quota를 맞추기 위해 균등하게 배분
 
-    matched_pairs: [(rgb_path, label_path), ...]
-    client_ratios: 각 클라이언트가 가져갈 전체 이미지 비율 리스트 (합=1 권장)
-    client_class_prefs: {client_idx: [class_idx1, class_idx2, ...], ...}
+def multi_hot_dirichlet_split(
+    matched_pairs: list,
+    num_clients: int,
+    client_ratios: list,
+    selected_labels: list,
+    alpha: float,
+    threshold: float = 0.01,
+    exclude_from_scoring: list = None,
+    num_classes: int = NUM_CLASSES,
+    random_state: int = 42,
+) -> list:
     """
-
+    Multi-hot label 기반 Dirichlet Non-IID 분할
+    
+    절차:
+    1) 각 이미지가 어떤 클래스들을 포함하는지 파악 (multi-hot)
+    2) 각 클라이언트의 "클래스 선호도" 결정 (Dirichlet 분포)
+    3) 이미지를 선호도 기반으로 확률적 할당 (배경 클래스 제외)
+    
+    Args:
+        matched_pairs: [(rgb_path, label_path), ...] 리스트
+        num_clients: 클라이언트 수
+        client_ratios: 각 클라이언트 비율 (합=1)
+        selected_labels: 사용할 클래스 리스트
+        alpha: Dirichlet 분포 concentration parameter
+               (작을수록 극단 Non-IID, 클수록 IID에 가까움)
+        threshold: multi-hot 판단 기준 픽셀 비율
+        exclude_from_scoring: 점수 계산에서 제외할 클래스 (배경 클래스)
+                             None이면 기본값 사용 [0,1,2,3,4,5,8,9,10]
+        num_classes: 전체 클래스 수
+        random_state: 랜덤 시드
+    
+    Returns:
+        client_file_pairs: 클라이언트별 [(rgb_path, label_path), ...] 리스트
+    """
     rng = np.random.RandomState(random_state)
-
     total_files = len(matched_pairs)
-    num_clients = len(client_ratios)
-
-    # 각 클라이언트 타깃 개수
+    
+    # 배경 클래스 기본값 설정
+    if exclude_from_scoring is None:
+        # Road, Sidewalk, Building, Wall, Fence, Pole, Vegetation, Terrain, Sky
+        exclude_from_scoring = [0, 1, 2, 3, 4, 5, 8, 9, 10]
+    
+    exclude_set = set(exclude_from_scoring)
+    
+    # 타겟 사이즈 계산
     target_sizes = [int(round(r * total_files)) for r in client_ratios]
     diff = total_files - sum(target_sizes)
     if diff != 0:
         target_sizes[-1] += diff
-
-    print("[Non-IID] Target sizes per client:", target_sizes)
-
-    client_assignments = [[] for _ in range(num_clients)]
-    current_sizes = [0] * num_clients
-
-    # 1) 각 이미지의 클래스 분포(비율) 미리 계산
-    print("[Non-IID] 이미지별 클래스 히스토그램 계산 중...")
-    image_hists = []
-    for _, label_path in tqdm(matched_pairs):
-        hist = compute_label_histogram(label_path, num_classes=num_classes)
-        image_hists.append(hist)
-
-    indices = np.arange(total_files)
-    rng.shuffle(indices)
-
-    # 클라이언트별 선호 클래스 마스크 미리 계산
-    client_pref_masks = []
-    for c_idx in range(num_clients):
-        mask = np.zeros(num_classes, dtype=bool)
-        for cls in client_class_prefs.get(c_idx, []):
-            if 0 <= cls < num_classes:
-                mask[cls] = True
-        client_pref_masks.append(mask)
-
-    for idx in indices:
-        rgb_path, label_path = matched_pairs[idx]
-        hist = image_hists[idx]  # 비율 합 = 1.0 (또는 0)
-
-        # 각 클라이언트에 대해 선호 클래스 픽셀 비율 합(pref_ratio)을 점수로 사용
-        scores = []
-        for c_idx in range(num_clients):
-            pref_mask = client_pref_masks[c_idx]
-            if not np.any(pref_mask):
-                # 선호 클래스가 정의되지 않은 클라이언트는 일단 0점
-                scores.append(0.0)
-                continue
-
-            pref_ratio = hist[pref_mask].sum()  # 이 클라이언트가 좋아하는 클래스 비율의 총합
-            scores.append(pref_ratio)
-
-        scores = np.array(scores, dtype=np.float32)
-        max_score = scores.max()
-
-        assigned = False
-
-        if max_score <= 0.0:
-            # 어떤 클라이언트도 이 이미지에서 선호 클래스를 가지지 않음
-            # → 가장 적게 가지고 있는 클라이언트에 넣어 균등 분배
-            c_idx = int(np.argmin(current_sizes))
-            client_assignments[c_idx].append((rgb_path, label_path))
-            current_sizes[c_idx] += 1
-            assigned = True
-        else:
-            # 선호 클래스가 있는 클라이언트가 존재
-            # 점수 높은 순서대로, 아직 quota 안 찬 클라이언트에 우선 할당
-            sorted_clients = np.argsort(scores)[::-1]  # 내림차순
-
-            for c_idx in sorted_clients:
-                if scores[c_idx] <= 0.0:
-                    # 그 이하 클라이언트는 선호 클래스 픽셀 비율 0이므로 볼 필요 없음
-                    break
-                if current_sizes[c_idx] < target_sizes[c_idx]:
-                    client_assignments[c_idx].append((rgb_path, label_path))
-                    current_sizes[c_idx] += 1
-                    assigned = True
-                    break
-
-        # 혹시 위 로직에서 quota가 꽉 차서 할당이 안 되었으면
-        # 남은 자리 가장 많은 클라이언트에 넣기
-        if not assigned:
-            c_idx = int(np.argmin(current_sizes))
-            client_assignments[c_idx].append((rgb_path, label_path))
-            current_sizes[c_idx] += 1
-
-    print("[Non-IID] Final sizes per client:", [len(lst) for lst in client_assignments])
-
-    # 검증: 각 클라이언트가 선호 클래스를 얼마나 많이 받았는지(샘플 50개 기준)
-    for c_idx in range(num_clients):
-        pref_classes = set(client_class_prefs.get(c_idx, []))
-        if len(client_assignments[c_idx]) == 0 or len(pref_classes) == 0:
-            continue
-
-        match_count = 0
-        sample_size = min(50, len(client_assignments[c_idx]))
-        for _, label_path in client_assignments[c_idx][:sample_size]:
-            hist = compute_label_histogram(label_path, num_classes=num_classes)
-            present = set(np.where(hist > 0.01)[0])
-            if len(present & pref_classes) > 0:
-                match_count += 1
-
-        print(
-            f"  Client {c_idx}: 선호 클래스 {pref_classes}, "
-            f"매칭 이미지 비율 {match_count}/{sample_size}"
+    
+    print(f"[Multi-Hot] Target sizes: {target_sizes}")
+    print(f"[Multi-Hot] Alpha: {alpha}, Threshold: {threshold}")
+    print(f"[Multi-Hot] Excluded from scoring: {[SYNTHIA_CLASSES.get(c, str(c)) for c in exclude_from_scoring]}")
+    
+    # 1) 각 이미지의 multi-hot label 계산
+    print("[Multi-Hot] Computing multi-hot labels...")
+    image_labels = []  # [(img_idx, [class1, class2, ...]), ...]
+    for idx, (_, label_path) in enumerate(tqdm(matched_pairs, desc="Multi-hot labels")):
+        classes = compute_multi_hot_label(
+            label_path, selected_labels, threshold, num_classes
         )
+        image_labels.append((idx, classes))
+    
+    # 통계 출력
+    class_occurrence = {cls: 0 for cls in selected_labels}
+    for _, classes in image_labels:
+        for cls in classes:
+            if cls in class_occurrence:
+                class_occurrence[cls] += 1
+    
+    print("[Multi-Hot] Class occurrence (number of images):")
+    for cls in selected_labels:
+        print(f"  class {cls} ({SYNTHIA_CLASSES.get(cls, 'Unknown')}): {class_occurrence[cls]} images")
+    
+    # 2) 각 클라이언트의 클래스 선호도 (Dirichlet 분포)
+    client_class_preference = np.zeros((num_clients, num_classes), dtype=np.float32)
+    
+    for c_idx in range(num_clients):
+        # Dirichlet 샘플링
+        preference = rng.dirichlet(alpha * np.ones(len(selected_labels)))
+        for i, cls in enumerate(selected_labels):
+            client_class_preference[c_idx, cls] = preference[i]
+    
+    print("\n[Multi-Hot] Client class preferences (top 3):")
+    for c_idx in range(num_clients):
+        top_classes = []
+        for cls in selected_labels:
+            top_classes.append((cls, client_class_preference[c_idx, cls]))
+        top_classes.sort(key=lambda x: x[1], reverse=True)
+        
+        top_3_str = ", ".join([
+            f"{SYNTHIA_CLASSES.get(cls, str(cls))}({pref:.3f})" 
+            for cls, pref in top_classes[:3]
+        ])
+        print(f"  Client {c_idx+1}: {top_3_str}")
+    
+    # 3) 이미지 할당
+    client_file_indices = [[] for _ in range(num_clients)]
+    current_sizes = [0] * num_clients
+    
+    # 이미지 순서 섞기
+    rng.shuffle(image_labels)
+    
+    # 통계: 배경만 있는 이미지 개수
+    background_only_count = 0
+    
+    for img_idx, classes in tqdm(image_labels, desc="Assigning images"):
+        if not classes:
+            # 클래스 없는 이미지는 부족한 클라이언트에
+            deficits = [target_sizes[c] - current_sizes[c] for c in range(num_clients)]
+            c_idx = int(np.argmax(deficits))
+            background_only_count += 1
+        else:
+            # 🔥 배경 클래스를 제외한 전경 클래스만 점수 계산에 사용
+            scoring_classes = [cls for cls in classes if cls not in exclude_set]
+            
+            if not scoring_classes:
+                # 배경 클래스만 있는 이미지 → 균등 분배
+                deficits = [target_sizes[c] - current_sizes[c] for c in range(num_clients)]
+                c_idx = int(np.argmax(deficits))
+                background_only_count += 1
+            else:
+                # 전경 클래스로만 선호도 점수 계산
+                scores = np.zeros(num_clients, dtype=np.float32)
+                for cls in scoring_classes:  # 🔥 배경 제외된 클래스만 사용
+                    if 0 <= cls < num_classes:
+                        scores += client_class_preference[:, cls]
+                
+                # 남은 용량 고려
+                remaining = np.array([
+                    max(0, target_sizes[c] - current_sizes[c]) 
+                    for c in range(num_clients)
+                ], dtype=np.float32)
+                
+                if remaining.sum() == 0:
+                    scores = np.ones(num_clients, dtype=np.float32)
+                else:
+                    scores = scores * remaining
+                
+                # 확률적 선택
+                if scores.sum() == 0:
+                    probs = remaining / remaining.sum() if remaining.sum() > 0 else np.ones(num_clients) / num_clients
+                else:
+                    probs = scores / scores.sum()
+                
+                c_idx = rng.choice(num_clients, p=probs)
+        
+        client_file_indices[c_idx].append(img_idx)
+        current_sizes[c_idx] += 1
+    
+    print(f"\n[Multi-Hot] Final sizes: {current_sizes}")
+    print(f"[Multi-Hot] Images with only background classes: {background_only_count} ({background_only_count/total_files*100:.1f}%)")
+    
+    # 4) 각 클라이언트가 받은 클래스 분포 확인
+    print("\n[Multi-Hot] Client class distribution:")
+    for c_idx in range(num_clients):
+        client_class_count = {cls: 0 for cls in selected_labels}
+        for img_idx in client_file_indices[c_idx]:
+            _, classes = image_labels[img_idx]
+            for cls in classes:
+                if cls in client_class_count:
+                    client_class_count[cls] += 1
+        
+        print(f"  Client {c_idx+1}:")
+        for cls in selected_labels:
+            if client_class_count[cls] > 0:
+                ratio = client_class_count[cls] / len(client_file_indices[c_idx]) * 100
+                print(f"    {SYNTHIA_CLASSES.get(cls, str(cls))}: {client_class_count[cls]} images ({ratio:.1f}%)")
+    
+    # 5) 인덱스 → 파일 쌍 변환
+    client_file_pairs = [[] for _ in range(num_clients)]
+    for c_idx in range(num_clients):
+        for idx in client_file_indices[c_idx]:
+            client_file_pairs[c_idx].append(matched_pairs[idx])
+    
+    return client_file_pairs
 
-    return client_assignments
-
-# SYNTHIA TrainIds 0~18 (총 19개)
-SYNTHIA_CLASSES = {
-    0: 'void',
-    1: 'sky', 
-    2: 'Building',
-    3: 'Road',
-    4: 'Sidewalk',
-    5: 'Fence',
-    6: 'Vegetation',
-    7: 'Pole',
-    8: 'Car',
-    9: 'Traffic sign',
-    10: 'Pedestrian',
-    11: 'Bicycle',
-    12: 'Motorcycle',
-    13: 'Parking-slot',
-    14: 'Road-work',
-    15: 'Traffic light',
-    16: 'Terrain',
-    17: 'Rider',
-    18: 'Truck',
-    # 19, 20, 21, 22는 지금은 사용 안 함
-}
 
 def compute_class_distribution_in_dir(label_dir, num_classes=NUM_CLASSES, max_files=None):
     """
@@ -242,26 +298,29 @@ def compute_class_distribution_in_dir(label_dir, num_classes=NUM_CLASSES, max_fi
 
         # 255, 0,1,2,3 모두 제거
         valid_mask = (arr != 255)
-        for bg in [0, 1, 2, 3]:
+        for bg in [0, 1, 2, 3, 4, 5, 8, 9, 10]:
             valid_mask &= (arr != bg)
 
         arr_valid = arr[valid_mask]
         if arr_valid.size == 0:
             continue
 
-        # 0~18로 클리핑
-        arr_valid = np.clip(arr_valid, 4, num_classes - 1)
-
+        range_mask = (arr_valid >= 0) & (arr_valid < num_classes)
+        arr_valid = arr_valid[range_mask]
+        if arr_valid.size == 0:
+            continue
+        
         hist = np.bincount(arr_valid, minlength=num_classes)
         total_hist += hist
 
     return total_hist  # shape: (num_classes,)
 
+
 def plot_class_distribution_per_client(base_output_folder, num_clients, split="train", num_classes=NUM_CLASSES):
     """
     특정 클래스(예: 0,1,2,3) 제외하고 시각화
     """
-    exclude_classes = [0, 1, 2, 3]
+    exclude_classes = [0, 1, 2, 3, 4, 5, 8, 9, 10]
     include_classes = [i for i in range(num_classes) if i not in exclude_classes]
 
     all_dists = []
@@ -309,5 +368,3 @@ def plot_class_distribution_per_client(base_output_folder, num_clients, split="t
     plt.savefig(plot_file, dpi=300, bbox_inches="tight")
     plt.close()
     print(f"{split} 클래스 분포 플롯 저장: {plot_file}")
-
-
