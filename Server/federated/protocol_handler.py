@@ -12,9 +12,10 @@ import time
 class FLProtocolHandler:
     """연합학습 프로토콜 로직"""
     
-    def __init__(self, global_model, mobius_handler, config):
+    def __init__(self, global_model, mobius_handler,result_manager, config):
         self.global_model = global_model
         self.mobius = mobius_handler
+        self.result_manager = result_manager
         self.config = config
         
         # 클라이언트 관리
@@ -70,6 +71,8 @@ class FLProtocolHandler:
                 self.ready_client_sids.remove(client_id)
                 
         elif event == 'client_wake_up':
+            self.global_model.load_dataset()
+            
             print("client wake_up: ", client_id)
             data = {
                 'event': 'init', 
@@ -131,19 +134,33 @@ class FLProtocolHandler:
 
                     print("Aggregated training loss:", aggr_train_loss)
 
-                    # New convergence checking logic:
-                    if len(self.global_model.train_losses) >= (2 * self.config.WINDOW_SIZE):
-                        # Get the last WINDOW_SIZE losses and the previous WINDOW_SIZE losses.
-                        last_window = [entry[2] for entry in self.global_model.train_losses[-self.config.WINDOW_SIZE:]]
-                        prev_window = [entry[2] for entry in self.global_model.train_losses[-(2 * self.config.WINDOW_SIZE):-self.config.WINDOW_SIZE]]
-                        avg_recent = sum(last_window) / self.config.WINDOW_SIZE
-                        avg_previous = sum(prev_window) / self.config.WINDOW_SIZE
-                        print("Average loss for last", self.config.WINDOW_SIZE, "rounds:", avg_recent)
-                        print("Average loss for previous", self.config.WINDOW_SIZE, "rounds:", avg_previous)
-                        if avg_recent >= avg_previous:
-                            print("Convergence criterion met (recent average loss is not lower than previous average). Triggering evaluation.")
-                            self.stop_and_eval()
-                            return
+                    # # New convergence checking logic:
+                    # if len(self.global_model.train_losses) >= (2 * self.config.WINDOW_SIZE):
+                    #     # Get the last WINDOW_SIZE losses and the previous WINDOW_SIZE losses.
+                    #     last_window = [entry[2] for entry in self.global_model.train_losses[-self.config.WINDOW_SIZE:]]
+                    #     prev_window = [entry[2] for entry in self.global_model.train_losses[-(2 * self.config.WINDOW_SIZE):-self.config.WINDOW_SIZE]]
+                    #     avg_recent = sum(last_window) / self.config.WINDOW_SIZE
+                    #     avg_previous = sum(prev_window) / self.config.WINDOW_SIZE
+                    #     print("Average loss for last", self.config.WINDOW_SIZE, "rounds:", avg_recent)
+                    #     print("Average loss for previous", self.config.WINDOW_SIZE, "rounds:", avg_previous)
+                    #     if avg_recent >= avg_previous:
+                    #         print("Convergence criterion met (recent average loss is not lower than previous average). Triggering evaluation.")
+                    #         self.stop_and_eval()
+                    #         return
+                    
+                    if self.current_round % self.config.ROUNDS_BETWEEN_VALIDATIONS == 0:
+                        print(f"Round {self.current_round}: start global test")
+                        
+                        miou, pixel_acc, test_loss = self.global_model.evaluate_global(round_number=self.current_round)
+                        additional_results = {
+                            'miou': miou,
+                            'pixel_acc': pixel_acc,
+                            'test_loss': test_loss
+                        }
+                        self.result_manager.save_eval_result(
+                            round_number=self.current_round,
+                            eval_metrics=additional_results
+                        )
                     
                     if self.current_round == self.config.MAx_NUM_ROUNDS:
                         print("Maximum rounds reached. Triggering evaluation.")

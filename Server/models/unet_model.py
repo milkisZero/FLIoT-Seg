@@ -13,7 +13,7 @@ class UNetGlobalModel(BaseGlobalModel):
         self.num_classes = num_classes
         self.selected_labels = selected_labels
         self.input_shape = input_shape
-        super(UNetGlobalModel, self).__init__()
+        super(UNetGlobalModel, self).__init__(selected_labels)
 
     def build_model(self):
         """
@@ -89,7 +89,7 @@ class UNetLite(BaseGlobalModel):
         self.num_classes = num_classes
         self.selected_labels = selected_labels
         self.input_shape = input_shape
-        super(UNetLite, self).__init__()
+        super(UNetLite, self).__init__(selected_labels)
 
     def build_model(self):
         """

@@ -60,16 +60,26 @@ services:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
+      - TF_GPU_ALLOCATOR=cuda_malloc_async
+    deploy:
+          resources:
+            reservations:
+              devices:
+                - driver: nvidia
+                  count: all
+                  capabilities: [gpu]
     networks:
       federated_network:
         ipv4_address: ${DOCKER_NETWORK}2
     volumes:
+      - ./Server/SYNTHIA_Splitted:/app/SYNTHIA_Splitted
       - ./Server/fl_server.py:/app/fl_server.py
       - ./Server/models:/app/models
       - ./Server/communication:/app/communication
       - ./Server/utils:/app/utils
       - ./Server/federated:/app/federated
       - ./Server/config.json:/app/config.json
+      - ./results/Server:/app/results
     depends_on:
       mobius:
         condition: service_healthy

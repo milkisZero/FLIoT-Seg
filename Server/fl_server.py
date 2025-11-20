@@ -9,15 +9,29 @@ from models.unet_model import UNetGlobalModel, UNetLite
 from models.DeepLabV3PlusMobileNet import DeepLabV3PlusMobileNet
 import json
 import time
+from utils.gpu_setup import setup_gpu
+from federated.result_manager import FLResultManager
+import tensorflow as tf
+import os
+import datetime
 
 class FLServer:
     def __init__(self, global_model, config):
-
+        
+        gpu_id = 0 # if gpu_id == -1, use cpu
+        setup_gpu(gpu_id=gpu_id, enable_mixed_precision=True)
+    
         self.host = config.host
         self.port = config.port
         
         # 글로벌 모델
         self.global_model = global_model(config.num_classes, config.selected_labels, config.input_shape)
+        
+        device = "gpu" if tf.config.list_physical_devices("GPU") and gpu_id != -1 else "cpu"
+        self.execution_folder = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        if not os.path.exists(self.execution_folder):
+            os.makedirs(self.execution_folder)
+        self.result_manager = FLResultManager(base_dir= "results", execution_folder = self.execution_folder, device=device)
         
         self.mobius_handler = MobiusHandler(config)
         
@@ -25,6 +39,7 @@ class FLServer:
         self.protocol_handler = FLProtocolHandler(
             self.global_model,
             self.mobius_handler,
+            self.result_manager,
             config
         )
         
@@ -109,9 +124,8 @@ def load_config(config_path="config.json"):
    
 def main():    
     config = load_config("config.json")
-        
     server = FLServer(
-        global_model=UNetGlobalModel,
+        global_model=DeepLabV3PlusMobileNet,
         config=config
     )
     
