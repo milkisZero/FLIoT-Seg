@@ -204,7 +204,7 @@ class BaseGlobalModel(object):
         total_loss = 0.0
         num_batches = 0
 
-        bs_eval = 4
+        bs_eval = 2
         for i in range(0, len(self.x_test), bs_eval):
             xb = self.x_test[i:i+bs_eval].astype(np.float32)
             yb = self.y_test[i:i+bs_eval].astype(np.int32)
