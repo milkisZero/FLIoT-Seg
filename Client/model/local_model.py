@@ -145,8 +145,13 @@ class LocalModel(object):
         """
         # 클래스 수/팔레트
         
-        n_classes = self.num_classes
+        try:
+            n_classes = int(self.model.output_shape[-1])
+        except Exception:
+            n_classes = int(np.max(self.y_train[self.y_train != IGNORE_LABEL])) + 1        
         palette = _make_palette(n_classes)
+        print(n_classes)
+        print(self.num_classes)
 
         total_inter = np.zeros(n_classes, dtype=np.float64)
         total_union = np.zeros(n_classes, dtype=np.float64)

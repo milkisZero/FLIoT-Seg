@@ -71,7 +71,7 @@ class FLProtocolHandler:
                 self.ready_client_sids.remove(client_id)
                 
         elif event == 'client_wake_up':
-            self.global_model.load_dataset()
+            # self.global_model.load_dataset()
             
             print("client wake_up: ", client_id)
             data = {

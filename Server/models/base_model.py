@@ -190,6 +190,8 @@ class BaseGlobalModel(object):
         """
         세그멘테이션 평가 (ignore=255 무시)
         """
+        self.model.set_weights(self.current_weights)
+       
         # 클래스 수/팔레트
         n_classes = len(self.selected_labels)
         palette = _make_palette(n_classes)
