@@ -9,6 +9,7 @@ node_modules/
 *.csv
 Server/config.json
 results/Client*
+results/Server
 graphs
 docker-compose.yaml
 Client/build

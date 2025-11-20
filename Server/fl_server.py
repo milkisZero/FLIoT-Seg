@@ -111,7 +111,7 @@ def main():
     config = load_config("config.json")
         
     server = FLServer(
-        global_model=UNetGlobalModel,
+        global_model=DeepLabV3PlusMobileNet,
         config=config
     )
     
