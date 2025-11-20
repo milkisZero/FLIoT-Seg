@@ -13,7 +13,7 @@ class UNetGlobalModel(BaseGlobalModel):
         self.num_classes = num_classes
         self.selected_labels = selected_labels
         self.input_shape = input_shape
-        super(UNetGlobalModel, self).__init__(selected_labels)
+        super(UNetGlobalModel, self).__init__(selected_labels=selected_labels, target_size=input_shape)
 
     def build_model(self):
         """
@@ -89,7 +89,7 @@ class UNetLite(BaseGlobalModel):
         self.num_classes = num_classes
         self.selected_labels = selected_labels
         self.input_shape = input_shape
-        super(UNetLite, self).__init__(selected_labels)
+        super(UNetLite, self).__init__(selected_labels=selected_labels, target_size=input_shape)
 
     def build_model(self):
         """
@@ -102,40 +102,32 @@ class UNetLite(BaseGlobalModel):
         # Encoder (다운샘플링) - 기존 구조 유지하되 개선
         # Block 1 - 메모리 절약을 위해 64 → 32로 시작
         conv1 = Conv2D(32, 3, padding='same', kernel_initializer='he_normal')(inputs)
-        conv1 = BatchNormalization()(conv1)
         conv1 = Activation('relu')(conv1)
         conv1 = Conv2D(32, 3, padding='same', kernel_initializer='he_normal')(conv1)
-        conv1 = BatchNormalization()(conv1)
         conv1 = Activation('relu')(conv1)
         pool1 = MaxPooling2D(pool_size=(2, 2))(conv1)
         
         # Block 2
         conv2 = Conv2D(64, 3, padding='same', kernel_initializer='he_normal')(pool1)
-        conv2 = BatchNormalization()(conv2)
         conv2 = Activation('relu')(conv2)
         conv2 = Dropout(dropout_rate)(conv2)
         conv2 = Conv2D(64, 3, padding='same', kernel_initializer='he_normal')(conv2)
-        conv2 = BatchNormalization()(conv2)
         conv2 = Activation('relu')(conv2)
         pool2 = MaxPooling2D(pool_size=(2, 2))(conv2)
         
         # Block 3
         conv3 = Conv2D(128, 3, padding='same', kernel_initializer='he_normal')(pool2)
-        conv3 = BatchNormalization()(conv3)
         conv3 = Activation('relu')(conv3)
         conv3 = Dropout(dropout_rate)(conv3)
         conv3 = Conv2D(128, 3, padding='same', kernel_initializer='he_normal')(conv3)
-        conv3 = BatchNormalization()(conv3)
         conv3 = Activation('relu')(conv3)
         pool3 = MaxPooling2D(pool_size=(2, 2))(conv3)
         
         # Bottleneck (기존 conv4)
         conv4 = Conv2D(256, 3, padding='same', kernel_initializer='he_normal')(pool3)
-        conv4 = BatchNormalization()(conv4)
         conv4 = Activation('relu')(conv4)
         conv4 = Dropout(dropout_rate * 1.5)(conv4)
         conv4 = Conv2D(256, 3, padding='same', kernel_initializer='he_normal')(conv4)
-        conv4 = BatchNormalization()(conv4)
         conv4 = Activation('relu')(conv4)
         
         # Decoder (업샘플링) - 기존 구조 개선
@@ -144,11 +136,9 @@ class UNetLite(BaseGlobalModel):
         up5 = Conv2D(128, 2, padding='same', kernel_initializer='he_normal')(up5)
         merge5 = Concatenate()([conv3, up5])
         conv5 = Conv2D(128, 3, padding='same', kernel_initializer='he_normal')(merge5)
-        conv5 = BatchNormalization()(conv5)
         conv5 = Activation('relu')(conv5)
         conv5 = Dropout(dropout_rate)(conv5)
         conv5 = Conv2D(128, 3, padding='same', kernel_initializer='he_normal')(conv5)
-        conv5 = BatchNormalization()(conv5)
         conv5 = Activation('relu')(conv5)
         
         # Block 6 (기존 up6)
@@ -156,11 +146,9 @@ class UNetLite(BaseGlobalModel):
         up6 = Conv2D(64, 2, padding='same', kernel_initializer='he_normal')(up6)
         merge6 = Concatenate()([conv2, up6])
         conv6 = Conv2D(64, 3, padding='same', kernel_initializer='he_normal')(merge6)
-        conv6 = BatchNormalization()(conv6)
         conv6 = Activation('relu')(conv6)
         conv6 = Dropout(dropout_rate * 0.5)(conv6)
         conv6 = Conv2D(64, 3, padding='same', kernel_initializer='he_normal')(conv6)
-        conv6 = BatchNormalization()(conv6)
         conv6 = Activation('relu')(conv6)
         
         # Block 7 (기존 up7)
@@ -168,10 +156,8 @@ class UNetLite(BaseGlobalModel):
         up7 = Conv2D(32, 2, padding='same', kernel_initializer='he_normal')(up7)
         merge7 = Concatenate()([conv1, up7])
         conv7 = Conv2D(32, 3, padding='same', kernel_initializer='he_normal')(merge7)
-        conv7 = BatchNormalization()(conv7)
         conv7 = Activation('relu')(conv7)
         conv7 = Conv2D(32, 3, padding='same', kernel_initializer='he_normal')(conv7)
-        conv7 = BatchNormalization()(conv7)
         conv7 = Activation('relu')(conv7)
         
         # 출력 레이어
