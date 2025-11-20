@@ -19,13 +19,13 @@ class FLServer:
     def __init__(self, global_model, config):
         
         gpu_id = 0 # if gpu_id == -1, use cpu
-        setup_gpu(gpu_id=gpu_id, enable_mixed_precision=True)
+        setup_gpu(gpu_id=gpu_id, enable_mixed_precision=False)
     
         self.host = config.host
         self.port = config.port
         
         # 글로벌 모델
-        self.global_model = global_model(config.num_classes, config.selected_labels, config.input_shape)
+        self.global_model = global_model(num_classes=config.num_classes, selected_labels=config.selected_labels, input_shape=config.input_shape)
         
         device = "gpu" if tf.config.list_physical_devices("GPU") and gpu_id != -1 else "cpu"
         self.execution_folder = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

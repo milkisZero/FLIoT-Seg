@@ -28,6 +28,7 @@ class FLProtocolHandler:
         
         # 모델 ID
         self.model_id = str(uuid.uuid4())
+        self.global_model.load_dataset()
         
     def on_message(self, msg, client_id):
         payload = json.dumps(msg);
@@ -70,9 +71,7 @@ class FLProtocolHandler:
             if client_id in self.ready_client_sids:
                 self.ready_client_sids.remove(client_id)
                 
-        elif event == 'client_wake_up':
-            # self.global_model.load_dataset()
-            
+        elif event == 'client_wake_up':            
             print("client wake_up: ", client_id)
             data = {
                 'event': 'init', 

@@ -20,7 +20,7 @@ class FederatedClient:
         
         gpu_id = 0 # if gpu_id == -1, use cpu
         
-        setup_gpu(gpu_id=gpu_id, enable_mixed_precision=True)
+        setup_gpu(gpu_id=gpu_id, enable_mixed_precision=False)
         
         # TCP 클라이언트 생성
         self.tcp_client = TCPClient(server_host, server_port)
