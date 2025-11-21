@@ -80,6 +80,7 @@ services:
       - ./Server/federated:/app/federated
       - ./Server/config.json:/app/config.json
       - ./results/Server:/app/results
+      - ./Server/KD:/app/KD
     depends_on:
       mobius:
         condition: service_healthy

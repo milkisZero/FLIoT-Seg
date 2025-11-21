@@ -26,14 +26,14 @@
             256,
             256,
             3
-        ], 
-        "epoch_per_round" : 1, 
-        "batch_size" : 2
+        ],
+        "epoch_per_round": 1,
+        "batch_size": 2
     },
     "training": {
-        "MIN_NUM_WORKERS": 2,
+        "MIN_NUM_WORKERS": 3,
         "MAx_NUM_ROUNDS": 10,
-        "NUM_CLIENTS_CONTACTED_PER_ROUND": 2,
+        "NUM_CLIENTS_CONTACTED_PER_ROUND": 3,
         "ROUNDS_BETWEEN_VALIDATIONS": 2,
         "WINDOW_SIZE": 2
     },
@@ -48,5 +48,6 @@
             "X-M2M-RI": "12345",
             "Content-Type": "application/json"
         }
-    }
+    },
+    "kd" : 0
 }

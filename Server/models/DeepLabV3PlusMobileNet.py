@@ -12,18 +12,17 @@ from models.base_model import BaseGlobalModel
 
 
 class DeepLabV3PlusMobileNet(BaseGlobalModel):
-    def __init__(self, num_classes, selected_labels=None,
-                 input_shape=(256, 256, 3), lr=1e-4,
+    def __init__(self, config, lr=1e-4,
                  backbone_weights="imagenet"):
         """
         backbone_weights: None (랜덤 초기화) 또는 "imagenet"
         """
-        self.num_classes = num_classes
-        self.selected_labels = selected_labels
-        self.input_shape = input_shape
+        self.num_classes = config.num_classes
+        self.selected_labels = config.selected_labels
+        self.input_shape = config.input_shape
         self.lr = lr
         self.backbone_weights = backbone_weights
-        super(DeepLabV3PlusMobileNet, self).__init__(selected_labels=selected_labels, target_size=input_shape)
+        super(DeepLabV3PlusMobileNet, self).__init__(config)
 
     def _aspp_block(self, x, filters=256, rate_list=(6, 12, 18)):
         """

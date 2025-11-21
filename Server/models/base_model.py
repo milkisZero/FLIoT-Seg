@@ -10,6 +10,7 @@ import tensorflow as tf
 from models.datasetLoader import load_synthia_dataset
 import os
 from PIL import Image
+from KD.kd_handler import KDHandler
 
 IGNORE_LABEL = 255
 
@@ -96,7 +97,7 @@ def masked_pixel_accuracy(y_true, y_pred):
 
 class BaseGlobalModel(object):
     """docstring for GlobalModel"""
-    def __init__(self, selected_labels, target_size):
+    def __init__(self, config):
         self.model = self.build_model()
         self.current_weights = self.model.get_weights()
         
@@ -111,8 +112,38 @@ class BaseGlobalModel(object):
     
         self.x_test = None
         self.y_test = None
-        self.selected_labels=selected_labels
-        self.target_size=target_size
+        self.selected_labels=config.selected_labels
+        self.target_size=config.target_size
+        
+        if config.kd_on is True:
+            self.kd_handler = KDHandler(
+                target_size=self.target_size,
+                ignore_label=IGNORE_LABEL,
+                ce_loss_fn=loss_sparse_ce_ignore_255
+            )
+        
+    # ---------------------------------------------------------
+    # KD wrapper (BaseGlobalModel은 KDHandler를 "사용만" 함)
+    # ---------------------------------------------------------
+    def load_kd_data(self, server_dir, logits_dir, show_progress=False, use_imagenet_norm=True):
+        self.kd_handler.load_kd_data(
+            server_dir=server_dir,
+            logits_dir=logits_dir,
+            show_progress=show_progress,
+            use_imagenet_norm=use_imagenet_norm
+        )
+
+    def run_server_kd_epoch(self, lr=1e-4, tau=4.0, lam=0.5, batch_size=2):
+        kd_loss = self.kd_handler.run_epoch(
+            student_model=self.model,
+            lr=lr,
+            tau=tau,
+            lam=lam,
+            batch_size=batch_size
+        )
+        # KD 업데이트를 current_weights와 동기화
+        self.current_weights = self.model.get_weights()
+        return kd_loss
     
     def load_dataset(self):
         self.x_test, self.y_test = load_synthia_dataset(

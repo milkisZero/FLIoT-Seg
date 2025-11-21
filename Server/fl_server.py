@@ -25,7 +25,7 @@ class FLServer:
         self.port = config.port
         
         # 글로벌 모델
-        self.global_model = global_model(num_classes=config.num_classes, selected_labels=config.selected_labels, input_shape=config.input_shape)
+        self.global_model = global_model(config=config)
         
         device = "gpu" if tf.config.list_physical_devices("GPU") and gpu_id != -1 else "cpu"
         self.execution_folder = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -103,6 +103,8 @@ class SimpleConfig:
         # Mobius
         self.mobius_url = config_dict['mobius']['url']
         self.mobius_headers = config_dict['mobius']['headers']
+
+        self.kd_on = config_dict['KD']
    
 def load_config(config_path="config.json"):
     with open(config_path, 'r', encoding='utf-8') as f:

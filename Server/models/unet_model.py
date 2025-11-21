@@ -9,11 +9,11 @@ from models.base_model import BaseGlobalModel
 import json
 
 class UNetGlobalModel(BaseGlobalModel):
-    def __init__(self, num_classes, selected_labels, input_shape):
-        self.num_classes = num_classes
-        self.selected_labels = selected_labels
-        self.input_shape = input_shape
-        super(UNetGlobalModel, self).__init__(selected_labels=selected_labels, target_size=input_shape)
+    def __init__(self, config):
+        self.num_classes = config.num_classes
+        self.selected_labels = config.selected_labels
+        self.input_shape = config.input_shape
+        super(UNetGlobalModel, self).__init__(config)
 
     def build_model(self):
         """
@@ -85,11 +85,11 @@ class UNetGlobalModel(BaseGlobalModel):
         return model
     
 class UNetLite(BaseGlobalModel):
-    def __init__(self, num_classes, selected_labels, input_shape):
-        self.num_classes = num_classes
-        self.selected_labels = selected_labels
-        self.input_shape = input_shape
-        super(UNetLite, self).__init__(selected_labels=selected_labels, target_size=input_shape)
+    def __init__(self, config):
+        self.num_classes = config.num_classes
+        self.selected_labels = config.selected_labels
+        self.input_shape = config.input_shape
+        super(UNetLite, self).__init__(config)
 
     def build_model(self):
         """

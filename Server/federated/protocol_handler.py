@@ -29,6 +29,14 @@ class FLProtocolHandler:
         # 모델 ID
         self.model_id = str(uuid.uuid4())
         self.global_model.load_dataset()   
+        
+        if self.config.kd_on is True:
+            self.global_model.load_kd_data(
+                server_dir="../SYNTHIA_Splitted/serverdata",
+                logits_dir="./teacher_logits",
+                show_progress=False,
+                use_imagenet_norm=True  # teacher_pipeline에서 정규화 했으니 맞춤
+            )
 
     def on_message(self, msg, client_id):
         payload = json.dumps(msg);
@@ -146,6 +154,13 @@ class FLProtocolHandler:
                     #         print("Convergence criterion met (recent average loss is not lower than previous average). Triggering evaluation.")
                     #         self.stop_and_eval()
                     #         return
+    
+                    if self.config.kd_on is True:
+                        kd_loss = self.global_model.run_server_kd_epoch(
+                            lr=1e-4, tau=4.0, lam=0.5,
+                            batch_size=self.config.batch_size
+                        )
+                        print("KD loss:", kd_loss)
                     
                     if self.current_round % self.config.ROUNDS_BETWEEN_VALIDATIONS == 0:
                         print(f"Round {self.current_round}: start global test")
