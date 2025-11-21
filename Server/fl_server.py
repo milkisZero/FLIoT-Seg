@@ -71,6 +71,17 @@ class FLServer:
         
         time.sleep(1) 
         self.mobius_handler.create_aeWatcher()
+        
+        self.protocol_handler.global_model.load_dataset()   
+        
+        if self.protocol_handler.config.kd_on is True:
+            print(f"KD valud is True")
+            self.protocol_handler.global_model.load_kd_data(
+                server_dir="./SYNTHIA_Splitted/serverdata",
+                logits_dir="./KD/teacher_logits",
+                show_progress=False,
+                use_imagenet_norm=True  # teacher_pipeline에서 정규화 했으니 맞춤
+            )
 
         # 서버 실행 유지
         while True:
@@ -104,7 +115,8 @@ class SimpleConfig:
         self.mobius_url = config_dict['mobius']['url']
         self.mobius_headers = config_dict['mobius']['headers']
 
-        self.kd_on = config_dict['KD']
+        self.kd_on = bool(config_dict['KD'])
+        print(f"KD value: {self.kd_on}")
    
 def load_config(config_path="config.json"):
     with open(config_path, 'r', encoding='utf-8') as f:

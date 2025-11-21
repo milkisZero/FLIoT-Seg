@@ -28,15 +28,17 @@ class FLProtocolHandler:
         
         # 모델 ID
         self.model_id = str(uuid.uuid4())
-        self.global_model.load_dataset()   
+        # self.global_model.load_dataset()   
         
-        if self.config.kd_on is True:
-            self.global_model.load_kd_data(
-                server_dir="../SYNTHIA_Splitted/serverdata",
-                logits_dir="./teacher_logits",
-                show_progress=False,
-                use_imagenet_norm=True  # teacher_pipeline에서 정규화 했으니 맞춤
-            )
+        # print(f"KD valud in proto {self.config.kd_on}")
+        # if self.config.kd_on is True:
+        #     print(f"KD valud is True")
+        #     self.global_model.load_kd_data(
+        #         server_dir="./SYNTHIA_Splitted/serverdata",
+        #         logits_dir="./KD/teacher_logits",
+        #         show_progress=False,
+        #         use_imagenet_norm=True  # teacher_pipeline에서 정규화 했으니 맞춤
+        #     )
 
     def on_message(self, msg, client_id):
         payload = json.dumps(msg);
