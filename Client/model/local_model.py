@@ -142,12 +142,16 @@ class LocalModel(object):
     def evaluate1(self, round_number=None, save_overlays=True, num_samples=8, alpha=0.5):
         """
         세그멘테이션 평가 (ignore=255 무시)
+        return:
+            miou            : 전체 클래스 mIoU
+            fg_miou         : exclude_from_scoring 제외한 foreground mIoU
+            pixel_acc       : 픽셀 정확도
+            test_loss       : CE(ignore=255) 평균 loss
         """
-        # 클래스 수/팔레트
-        
+
         n_classes = self.num_classes
         palette = _make_palette(n_classes)
-        
+
         total_inter = np.zeros(n_classes, dtype=np.float64)
         total_union = np.zeros(n_classes, dtype=np.float64)
         total_correct = 0
@@ -156,22 +160,19 @@ class LocalModel(object):
         total_loss = 0.0
         num_batches = 0
 
-        bs_eval = self.model_config.get('batch_size', 1)
+        bs_eval = 2
         for i in range(0, len(self.x_test), bs_eval):
             xb = self.x_test[i:i+bs_eval].astype(np.float32)
             yb = self.y_test[i:i+bs_eval].astype(np.int32)
 
             pred = self.model.predict(xb, verbose=0)
 
-            # ----- 여기서 batch loss 계산 -----
-            # yb: (B,H,W), pred: (B,H,W,C)
             batch_loss = loss_sparse_ce_ignore_255(
                 tf.convert_to_tensor(yb),
                 tf.convert_to_tensor(pred)
             ).numpy()
             total_loss += batch_loss
             num_batches += 1
-            # ---------------------------------
 
             pred_cls = np.argmax(pred, axis=-1).astype(np.int32)
 
@@ -193,22 +194,35 @@ class LocalModel(object):
 
         pixel_acc = (total_correct / total_labeled) if total_labeled > 0 else 0.0
         class_iou = total_inter / np.maximum(total_union, 1e-9)
-        miou = float(np.mean(class_iou[np.isfinite(class_iou)]))
+
+        # 전체 mIoU
+        valid_iou = class_iou[np.isfinite(class_iou)]
+        miou = float(np.mean(valid_iou)) if valid_iou.size > 0 else 0.0
+
+        # foreground mIoU (exclude_from_scoring 제외)
+        exclude_from_scoring = [0, 1, 2, 3, 4, 5, 8, 9, 10]
+
+        fg_mask = np.ones(n_classes, dtype=bool)
+        for c in exclude_from_scoring:
+            if 0 <= c < n_classes:
+                fg_mask[c] = False
+
+        fg_valid_iou = class_iou[fg_mask]
+        fg_valid_iou = fg_valid_iou[np.isfinite(fg_valid_iou)]
+        fg_miou = float(np.mean(fg_valid_iou)) if fg_valid_iou.size > 0 else 0.0
 
         test_loss = total_loss / max(num_batches, 1)
 
         print("Segmentation Evaluation:")
         print(f"  Test Loss: {test_loss:.4f}")
-        print(f"  PixelAcc: {pixel_acc:.4f}, mIoU: {miou:.4f}")
+        print(f"  PixelAcc: {pixel_acc:.4f}, mIoU: {miou:.4f}, FG-mIoU: {fg_miou:.4f}")
 
-        # === (여기서만) 오버레이 저장 ===
         if save_overlays and len(self.x_test) > 0:
             base = os.path.join("results", "image")
             tag = f"eval_round_{round_number}" if round_number is not None else "eval_final"
             out_dir = os.path.join(base, "overlays", tag)
             os.makedirs(out_dir, exist_ok=True)
 
-            # 균등 샘플 n개 추출
             n = min(num_samples, len(self.x_test))
             idxs = np.linspace(0, len(self.x_test) - 1, num=n, dtype=int)
             xb = self.x_test[idxs].astype(np.float32)
@@ -221,5 +235,5 @@ class LocalModel(object):
 
             print(f"[Overlay] 저장: {out_dir} (샘플 {n}장)")
 
-        # 인터페이스 호환 (f1, precision, recall 자리)
-        return miou, pixel_acc, test_loss
+        return miou, fg_miou, pixel_acc, test_loss
+

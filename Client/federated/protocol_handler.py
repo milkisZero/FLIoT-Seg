@@ -143,7 +143,7 @@ class FLProtocolHandler:
         round_number=req["round_number"] if 'round_number' in req else None
         
         # 평가지표, 변형 가능 -> F1, precision, recall
-        miou, pixel_acc, test_loss = self.local_model.evaluate1(round_number)
+        miou, fg_miou, pixel_acc, test_loss = self.local_model.evaluate1(round_number)
         
         time_end = time.time()
         print('\033[1;35;0m Time cost = %fs \033[0m' % (time_end - self.time_start))
@@ -165,6 +165,7 @@ class FLProtocolHandler:
 
         additional_results = {
             'miou': miou,
+            'fg_miou': fg_miou,
             'pixel_acc': pixel_acc,
             'test_loss': test_loss
         }

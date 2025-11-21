@@ -28,7 +28,6 @@ class FLProtocolHandler:
         
         # 모델 ID
         self.model_id = str(uuid.uuid4())
-        self.global_model.load_dataset()
         
     def on_message(self, msg, client_id):
         payload = json.dumps(msg);
@@ -108,6 +107,7 @@ class FLProtocolHandler:
             self.mobius.publish(client_id+'FromS', data)
 
             if len(self.ready_client_sids) >= self.config.MIN_NUM_WORKERS and self.current_round == 0:
+                self.global_model.load_dataset()   
                 self.train_next_round()
                 
         elif event == 'client_update':
@@ -150,9 +150,10 @@ class FLProtocolHandler:
                     if self.current_round % self.config.ROUNDS_BETWEEN_VALIDATIONS == 0:
                         print(f"Round {self.current_round}: start global test")
                         
-                        miou, pixel_acc, test_loss = self.global_model.evaluate_global(round_number=self.current_round)
+                        miou, fg_miou, pixel_acc, test_loss = self.global_model.evaluate_global(round_number=self.current_round)
                         additional_results = {
                             'miou': miou,
+                            'fg_miou': fg_miou,
                             'pixel_acc': pixel_acc,
                             'test_loss': test_loss
                         }
