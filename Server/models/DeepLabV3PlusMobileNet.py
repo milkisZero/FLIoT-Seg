@@ -6,6 +6,7 @@ from tensorflow.keras.layers import (
     Activation,
     UpSampling2D,
     Concatenate,
+    Lambda,  # 추가
 )
 from tensorflow.keras.optimizers import Adam
 from models.base_model import BaseGlobalModel
@@ -56,42 +57,42 @@ class DeepLabV3PlusMobileNet(BaseGlobalModel):
         return x
 
     def build_model(self):
-        """
-        SYNTHIA Semantic Segmentation을 위한
-        DeepLabv3+ (MobileNetV2 backbone) 모델
-        입력: 256x256x3, 출력: num_classes
-        """
-
         inputs = Input(shape=self.input_shape)
 
-        # Encoder: MobileNetV2 backbone
-        # 주의: weights=None 으로 두면 다운로드 없음
         backbone = tf.keras.applications.MobileNetV2(
             input_tensor=inputs,
             include_top=False,
-            weights=self.backbone_weights,  # None or "imagenet"
+            weights=self.backbone_weights,
         )
 
-        # low-level feature (stride 4 근처)
-        # 보통 block_3_expand_relu 를 많이 씀
         low_level = backbone.get_layer("block_3_expand_relu").output
-
-        # high-level feature (stride 16 근처)
-        # 보통 block_13_expand_relu 를 사용
         x = backbone.get_layer("block_13_expand_relu").output
 
         # ASPP
         x = self._aspp_block(x, filters=256, rate_list=(6, 12, 18))
 
-        # 1/16 -> 1/4 업샘플 (256 입력 기준: 16 → 64)
+        # 1/16 -> 1/4 업샘플
         x = UpSampling2D(size=(4, 4), interpolation="bilinear")(x)
-
-        # low-level feature 채널 줄이기
+        
+        # low_level feature 처리
         low_level = Conv2D(48, 1, padding="same", use_bias=False)(low_level)
         low_level = BatchNormalization()(low_level)
         low_level = Activation("relu")(low_level)
+        
+        # ===== Lambda로 동적 크기 맞추기 =====
+        def resize_to_match(tensors):
+            """x를 low_level의 크기에 맞춤"""
+            x_tensor, low_level_tensor = tensors
+            target_shape = tf.shape(low_level_tensor)
+            return tf.image.resize(
+                x_tensor, 
+                [target_shape[1], target_shape[2]], 
+                method='bilinear'
+            )
+        
+        x = Lambda(resize_to_match)([x, low_level])
 
-        # concat (1/4 해상도에서 결합)
+        # concat
         x = Concatenate()([x, low_level])
 
         # decoder conv
@@ -103,10 +104,20 @@ class DeepLabV3PlusMobileNet(BaseGlobalModel):
         x = BatchNormalization()(x)
         x = Activation("relu")(x)
 
-        # 원본 해상도(256x256)로 업샘플 (1/4 -> 1)
+        # 원본 해상도로 업샘플
         x = UpSampling2D(size=(4, 4), interpolation="bilinear")(x)
+        
+        # ===== 최종 출력 크기 고정 =====
+        def resize_to_input(x_tensor):
+            """출력을 입력 크기에 맞춤"""
+            return tf.image.resize(
+                x_tensor,
+                [self.input_shape[0], self.input_shape[1]],
+                method='bilinear'
+            )
+        
+        x = Lambda(resize_to_input)(x)
 
-        # 최종 클래스 예측
         outputs = Conv2D(self.num_classes, 1, activation="softmax")(x)
 
         model = Model(inputs=inputs, outputs=outputs)
