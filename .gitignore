@@ -17,4 +17,6 @@ Client/dist
 splitting_info.txt
 *.png
 Data/SYNTHIA.zip
-Server/KD
+*tar
+teacher_ft
+teacher_logits
