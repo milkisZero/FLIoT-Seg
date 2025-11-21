@@ -113,11 +113,11 @@ class BaseGlobalModel(object):
         self.x_test = None
         self.y_test = None
         self.selected_labels=config.selected_labels
-        self.target_size=config.target_size
+        self.input_shape=config.input_shape
         
         if config.kd_on is True:
             self.kd_handler = KDHandler(
-                target_size=self.target_size,
+                target_size=self.input_shape,
                 ignore_label=IGNORE_LABEL,
                 ce_loss_fn=loss_sparse_ce_ignore_255
             )
@@ -147,7 +147,7 @@ class BaseGlobalModel(object):
     
     def load_dataset(self):
         self.x_test, self.y_test = load_synthia_dataset(
-            target_size=self.target_size,
+            target_size=self.input_shape,
             binary=False,
             object_classes= self.selected_labels
         )

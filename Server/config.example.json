@@ -31,9 +31,9 @@
         "batch_size": 2
     },
     "training": {
-        "MIN_NUM_WORKERS": 3,
+        "MIN_NUM_WORKERS": 2,
         "MAx_NUM_ROUNDS": 10,
-        "NUM_CLIENTS_CONTACTED_PER_ROUND": 3,
+        "NUM_CLIENTS_CONTACTED_PER_ROUND": 2,
         "ROUNDS_BETWEEN_VALIDATIONS": 2,
         "WINDOW_SIZE": 2
     },
@@ -49,5 +49,5 @@
             "Content-Type": "application/json"
         }
     },
-    "kd" : 0
+    "KD": 0
 }
