@@ -77,6 +77,6 @@ def load_synthia_dataset(target_size, binary=False, object_classes=None, show_pr
         os.path.join("SYNTHIA_Splitted", "global_test", "LABELS"),
         phase="test"
     )
-    print("Loaded Global test data: X =", X_test.shape, "y =", y_test.shape)
+    print("Loaded Server side data: X =", X_test.shape, "y =", y_test.shape)
 
     return X_test, y_test

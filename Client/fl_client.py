@@ -11,16 +11,16 @@ from federated.result_manager import FLResultManager
 from utils.gpu_setup import setup_gpu
 
 class FederatedClient:  
-    def start_model_check_thread(protocol_handler, tcp_client, message):
+    def start_model_check_thread(self, protocol_handler, tcp_client, message):
         def check_loop():
+            time.sleep(30)
             while True:
-                if protocol_handler.local_model is None:
+                if protocol_handler.connected is False:
                     tcp_client.send_tcp_message('OPERATE', message)
                     print(f"re-sent wake up - {time.strftime('%Y-%m-%d %H:%M:%S')}")
                 else:
-                    print(f"local_model 로드 완료 - {time.strftime('%Y-%m-%d %H:%M:%S')}")
+                    print(f"connected 완료 - {time.strftime('%Y-%m-%d %H:%M:%S')}")
                     break
-                time.sleep(30)
         
         thread = threading.Thread(target=check_loop, daemon=True)
         thread.start()
@@ -78,8 +78,8 @@ class FederatedClient:
         message = json.dumps({
             'event': 'client_wake_up'
         })
-        # self.tcp_client.send_tcp_message('OPERATE', message)
-        self.start_model_check_thread(self.protocol_handler, self.tcp_client, message)
+        self.tcp_client.send_tcp_message('OPERATE', message)
+        self.start_model_check_thread(protocol_handler=self.protocol_handler, tcp_client=self.tcp_client, message=message)
         self.tcp_client.receive_tcp_messages()
     
 if __name__ == "__main__":        

@@ -19,7 +19,8 @@ class FLProtocolHandler:
         self.num_classes = None
         self.selected_labels = NotImplemented
         self.tcp_client.message_handler = self.handle_message
-    
+        self.connected = False
+
     def handle_message(self, header, message):
         if header == 'OPERATE':
             event = message['event']
@@ -52,6 +53,7 @@ class FLProtocolHandler:
         print("Reconnecting to server")
     
     def on_init(self, *args):
+        self.connected = True
         model_config = args[0]
         print("Init message received:", model_config)
         global num_classes, selected_labels
