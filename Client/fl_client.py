@@ -13,8 +13,8 @@ from utils.gpu_setup import setup_gpu
 class FederatedClient:  
     def start_model_check_thread(self, protocol_handler, tcp_client, message):
         def check_loop():
-            time.sleep(30)
             while True:
+                time.sleep(30)
                 if protocol_handler.connected is False:
                     tcp_client.send_tcp_message('OPERATE', message)
                     print(f"re-sent wake up - {time.strftime('%Y-%m-%d %H:%M:%S')}")

@@ -28,7 +28,8 @@ class FLProtocolHandler:
         
         # 모델 ID
         self.model_id = str(uuid.uuid4())
-        
+        self.global_model.load_dataset()   
+
     def on_message(self, msg, client_id):
         payload = json.dumps(msg);
         
@@ -106,8 +107,7 @@ class FLProtocolHandler:
             }
             self.mobius.publish(client_id+'FromS', data)
 
-            if len(self.ready_client_sids) >= self.config.MIN_NUM_WORKERS and self.current_round == 0:
-                self.global_model.load_dataset()   
+            if self.current_round == 0 and len(self.ready_client_sids) >= self.config.MIN_NUM_WORKERS :
                 self.train_next_round()
                 
         elif event == 'client_update':
