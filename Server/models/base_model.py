@@ -114,6 +114,7 @@ class BaseGlobalModel(object):
         self.y_test = None
         self.selected_labels=config.selected_labels
         self.input_shape=config.input_shape
+        self.bs = config.batch_size
         
         if config.kd_on is True:
             self.kd_handler = KDHandler(
@@ -239,7 +240,7 @@ class BaseGlobalModel(object):
         total_loss = 0.0
         num_batches = 0
 
-        bs_eval = 2
+        bs_eval = self.bs
         for i in range(0, len(self.x_test), bs_eval):
             xb = self.x_test[i:i+bs_eval].astype(np.float32)
             yb = self.y_test[i:i+bs_eval].astype(np.int32)

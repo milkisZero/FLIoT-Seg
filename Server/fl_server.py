@@ -72,16 +72,16 @@ class FLServer:
         time.sleep(1) 
         self.mobius_handler.create_aeWatcher()
         
-        self.protocol_handler.global_model.load_dataset()   
+        # self.protocol_handler.global_model.load_dataset()   
         
-        if self.protocol_handler.config.kd_on is True:
-            print(f"KD valud is True")
-            self.protocol_handler.global_model.load_kd_data(
-                server_dir="./SYNTHIA_Splitted/serverdata",
-                logits_dir="./KD/teacher_logits",
-                show_progress=False,
-                use_imagenet_norm=True  # teacher_pipeline에서 정규화 했으니 맞춤
-            )
+        # if self.protocol_handler.config.kd_on is True:
+        #     print(f"KD valud is True")
+        #     self.protocol_handler.global_model.load_kd_data(
+        #         server_dir="./SYNTHIA_Splitted/serverdata",
+        #         logits_dir="./KD/teacher_logits",
+        #         show_progress=False,
+        #         use_imagenet_norm=True  # teacher_pipeline에서 정규화 했으니 맞춤
+        #     )
 
         # 서버 실행 유지
         while True:
