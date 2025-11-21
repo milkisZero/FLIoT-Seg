@@ -184,7 +184,6 @@ class FLProtocolHandler:
         global num_classes
         num_classes = req['num_classes']
 
-        self.local_model.model = model_from_json(req['model_json'])
         if req['weights_format'] == 'pickle':
             weights = pickle_string_to_obj(req['current_weights'])
         with self.eval_lock:

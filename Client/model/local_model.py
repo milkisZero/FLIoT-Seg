@@ -101,6 +101,12 @@ class LocalModel(object):
         datasource = load_synthia_dataset(binary=False, object_classes=selected_labels, target_size=model_config['input_shape'])
         self.x_train, self.y_train, self.x_test, self.y_test = datasource
         self.anomaly_threshold = None
+
+        self.model.compile(
+            loss=loss_sparse_ce_ignore_255,
+            optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
+            metrics=[masked_pixel_accuracy],
+        )
         
     def get_weights(self):
         return self.model.get_weights()
@@ -111,12 +117,6 @@ class LocalModel(object):
     # return final weights, train loss, train accuracy
     def train_one_round(self):        
         start_time = time.time()
-
-        self.model.compile(
-            loss=loss_sparse_ce_ignore_255,
-            optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
-            metrics=[masked_pixel_accuracy],
-        )
 
         self.loss = self.model.fit(
             self.x_train, self.y_train,

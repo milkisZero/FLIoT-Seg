@@ -502,7 +502,8 @@ if __name__ == "__main__":
 
     H, W, _ = model_cfg["input_shape"]
     input_hw = (H, W)
-    batch_size = model_cfg.get("batch_size", 2)
+    # batch_size = model_cfg.get("batch_size", 2)
+    batch_size = 8
 
     print(f"\nConfiguration:")
     print(f"  num_classes: {num_classes}")
