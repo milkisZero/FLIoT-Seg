@@ -126,7 +126,9 @@ def load_cityscapes_pretrained(model, ckpt_path):
         return
     
     print(f"Loading pretrained weights from: {ckpt_path}")
-    ckpt = torch.load(ckpt_path, map_location="cpu")
+    
+    # PyTorch 2.6+ 호환성: weights_only=False 추가
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
 
     # 다양한 저장 포맷 처리
     state = None
@@ -144,7 +146,7 @@ def load_cityscapes_pretrained(model, ckpt_path):
     filtered = {}
     
     for k, v in state.items():
-        # 키 이름 매칭 (torchvision vs VainF 구조 차이 처리)
+        # 키 이름 매칭
         target_key = k
         
         # VainF 형식 → torchvision 형식 변환
@@ -221,7 +223,7 @@ def finetune_teacher(
     selected_labels=None,
     epochs_head=5,
     epochs_full=20,
-    lr_head=1e-5,
+    lr_head=1e-4,
     lr_full=5e-6,
     weight_decay=1e-4,
     patience_limit=5,
