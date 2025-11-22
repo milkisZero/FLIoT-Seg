@@ -161,9 +161,9 @@ class FLProtocolHandler:
                     #         self.stop_and_eval()
                     #         return
     
-                    if self.config.kd_on is True:
+                    if self.config.kd_on is True and ( self.current_round >= 6 and self.current_round <= 14):
                         kd_loss = self.global_model.run_server_kd_epoch(
-                            lr=1e-4, tau=4.0, lam=0.5,
+                            lr=1e-4, tau=4.0, lam=0.8,
                             batch_size=self.config.batch_size
                         )
                         print("KD loss:", kd_loss)
@@ -178,6 +178,9 @@ class FLProtocolHandler:
                             'pixel_acc': pixel_acc,
                             'test_loss': test_loss
                         }
+                        if self.config.kd_on is True and ( self.current_round >= 6 and self.current_round <= 14):
+                            additional_results['kd_loss'] = kd_loss 
+
                         self.result_manager.save_eval_result(
                             round_number=self.current_round,
                             eval_metrics=additional_results

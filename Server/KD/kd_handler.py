@@ -117,6 +117,7 @@ class KDHandler:
         self.kd_y = None            # (N,H,W) int32
         self.teacher_logits = None  # (N,H,W,C) float32
         self.teacher_names = None
+        self.opt = tf.keras.optimizers.Adam(1e-4)
 
     def _imagenet_normalize_np(self, X):
         mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
@@ -211,6 +212,35 @@ class KDHandler:
 
         return lam * ce + (1.0 - lam) * kl
 
+    def kd_loss_pure(self, y_true, s_pred, t_logits, tau=4.0):
+        """
+        Pure KD: KL(teacher || student) * tau^2
+        y_true는 mask(IGNORE_LABEL) 계산용으로만 사용
+        """
+        y_true = tf.cast(y_true, tf.int32)
+        mask = tf.not_equal(y_true, self.ignore_label)  # (B,H,W)
+
+        # teacher / student soft target (temperature scaling)
+        t_soft = tf.nn.softmax(t_logits / tau, axis=-1)  # (B,H,W,C)
+        s_soft = tf.nn.softmax(s_pred / tau, axis=-1)    # s_pred가 logits이면 이게 정석
+
+        # mask로 valid 픽셀만 선택
+        t_soft_m = tf.boolean_mask(t_soft, mask)  # (?,C)
+        s_soft_m = tf.boolean_mask(s_soft, mask)  # (?,C)
+
+        valid_count = tf.shape(t_soft_m)[0]
+
+        def _kl_part():
+            kl = tf.keras.losses.KLDivergence()(t_soft_m, s_soft_m)
+            return kl * (tau * tau)
+
+        kd_loss = tf.cond(
+            valid_count > 0,
+            _kl_part,
+            lambda: tf.constant(0.0, tf.float32)
+        )
+        return kd_loss
+
     def run_epoch(self, student_model, lr=1e-4, tau=4.0, lam=0.5, batch_size=2):
         """
         student_model(TF 모델)에 대해 KD 1 epoch 수행.
@@ -218,8 +248,6 @@ class KDHandler:
         """
         if self.kd_X is None or self.teacher_logits is None:
             raise RuntimeError("KD data not loaded. Call load_kd_data() first.")
-
-        opt = tf.keras.optimizers.Adam(lr)
 
         n = len(self.kd_X)
         total_loss = 0.0
@@ -239,7 +267,7 @@ class KDHandler:
                 loss = self.kd_loss_with_ce(yb_t, s_pred, tb_t, tau=tau, lam=lam)
 
             grads = tape.gradient(loss, student_model.trainable_variables)
-            opt.apply_gradients(zip(grads, student_model.trainable_variables))
+            self.opt.apply_gradients(zip(grads, student_model.trainable_variables))
 
             total_loss += float(loss.numpy())
             num_batches += 1
