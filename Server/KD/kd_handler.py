@@ -162,12 +162,13 @@ class KDHandler:
         )
 
         # scale / dtype
-        X = X.astype(np.float32) / 255.0
+        # X = X.astype(np.float32) / 255.0
+        X = X.astype(np.float32)
         y = y.astype(np.int32)
         teacher_logits = teacher_logits.astype(np.float32)
 
-        if use_imagenet_norm:
-            X = self._imagenet_normalize_np(X)
+        # if use_imagenet_norm:
+            # X = self._imagenet_normalize_np(X)
 
         self.kd_X = X
         self.kd_y = y

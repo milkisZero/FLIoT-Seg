@@ -36,37 +36,64 @@ def _make_palette(num_classes: int) -> np.ndarray:
     base = np.asarray(SYNTHIA_RGB, dtype=np.uint8)
     return base[:num_classes]
 
-def _overlay_mask_on_image(img01, mask, palette, alpha=0.5):
-    """
-    img01: float32 [0,1], shape (H,W,3)
-    mask : int32,        shape (H,W), 예측 클래스 맵
-    """
-    # 원본을 uint8로
-    img = (np.clip(img01 * 255.0, 0, 255)).astype(np.uint8)  # (H,W,3)
 
-    # 유효 픽셀 (색칠할 위치)
+def _overlay_mask_on_image(img_in, mask, palette, alpha=0.5):
+    """
+    img_in : 원본 이미지
+        - 0~255 uint8 이거나
+        - 0~255 float32 이거나
+        - 0~1 float32 일 수 있음 (옛 코드 호환용)
+    mask  : int32, shape (H,W), 예측 클래스 맵
+    """
+    img = np.asarray(img_in)
+
+    # 1) dtype / 범위 정리
+    if img.dtype == np.uint8:
+        # 이미 0~255 uint8이면 그대로 사용
+        pass
+    else:
+        img = img.astype(np.float32)
+        max_val = img.max() if img.size > 0 else 1.0
+
+        if max_val <= 1.5:
+            # [0,1] 범위로 들어온 경우 → 0~255로 스케일
+            img = (np.clip(img * 255.0, 0, 255)).astype(np.uint8)
+        else:
+            # 이미 0~255 근처 float 라고 가정
+            img = (np.clip(img, 0, 255)).astype(np.uint8)
+
+    # 2) 마스크 오버레이
     valid = (mask != IGNORE_LABEL)
-
-    # 팔레트 인덱싱(모듈로 X, 안전하게 클립)
     idx = np.clip(mask.astype(np.int32), 0, len(palette) - 1)
-    color = palette[idx].astype(np.uint8)                    # (H,W,3)
+    color = palette[idx].astype(np.uint8)
 
-    # 반투명 블렌딩 결과
     blended = (alpha * color + (1.0 - alpha) * img).astype(np.uint8)
 
-    # ignore 픽셀은 원본 유지, 나머지만 덮기
     over = img.copy()
     over[valid] = blended[valid]
     return over
 
 
+# -----------------------------
+# ImageNet 정규화 (모델 입력용)
+# -----------------------------
+def imagenet_preprocess_tf(x):
+    """
+    x : uint8 [0,255] 또는 float32 [0,255]
+    반환 : ImageNet 정규화된 float32
+    """
+    # 함수 내부에서 mean/std 정의 → 전역 변수 의존 X
+    mean = tf.constant([0.485, 0.456, 0.406], dtype=tf.float32)
+    std  = tf.constant([0.229, 0.224, 0.225], dtype=tf.float32)
+
+    x = tf.cast(x, tf.float32) / 255.0
+    x = (x - mean) / std
+    return x
+
 def loss_sparse_ce_ignore_255(y_true, y_pred):
     # y_true: (B,H,W) 또는 (B,H,W,1)
     # y_pred: (B,H,W,C) [softmax]
     y_true = tf.cast(y_true, tf.int32)
-
-    # # (B,H,W,1) -> (B,H,W), (B,H,W)는 그대로 유지
-    # y_true = tf.reshape(y_true, tf.shape(y_true)[:3])
 
     # ignore=255 마스킹
     mask = tf.not_equal(y_true, IGNORE_LABEL)          # (B,H,W)
@@ -91,16 +118,31 @@ def masked_pixel_accuracy(y_true, y_pred):
     total   = tf.cast(tf.size(yt), tf.float32)
     return tf.where(total > 0, correct / total, 0.0)
 
+
 class LocalModel(object):
     def __init__(self, model_config, num_classes, selected_labels):
         self.model_config = model_config
-        self.model = model_from_json(model_config['model_json'])
+
+        # 1) base 모델 로드
+        base_model = model_from_json(model_config['model_json'])
+
         self.num_classes = num_classes
         self.selected_Labels = selected_labels
         
-        datasource = load_synthia_dataset(binary=False, object_classes=selected_labels, target_size=model_config['input_shape'])
+        # 2) 데이터 로딩 (⚠️ 여기서는 uint8 0~255로 반환되게 구현되어 있어야 함)
+        datasource = load_synthia_dataset(
+            binary=False,
+            object_classes=selected_labels,
+            target_size=model_config['input_shape']
+        )
         self.x_train, self.y_train, self.x_test, self.y_test = datasource
         self.anomaly_threshold = None
+
+        # 3) ImageNet 정규화 레이어를 앞에 붙인 래핑 모델 생성
+        inputs = tf.keras.Input(shape=base_model.input_shape[1:])
+        x = tf.keras.layers.Lambda(imagenet_preprocess_tf, name="imagenet_preprocess")(inputs)
+        outputs = base_model(x)
+        self.model = tf.keras.Model(inputs=inputs, outputs=outputs)
 
         self.model.compile(
             loss=loss_sparse_ce_ignore_255,
@@ -118,6 +160,8 @@ class LocalModel(object):
     def train_one_round(self):        
         start_time = time.time()
 
+        # self.x_train : uint8 [0,255]
+        # → 모델 안에서 Lambda(imagenet_preprocess_tf)가 정규화 수행
         self.loss = self.model.fit(
             self.x_train, self.y_train,
             epochs=self.model_config.get('epoch_per_round', 1),
@@ -129,7 +173,6 @@ class LocalModel(object):
         end_time = time.time()
         train_time = end_time - start_time
 
-        # 리소스를 이용하여 최고 메모리 사용량(킬로바이트 단위)을 측정하고 MB 단위로 변환
         usage = resource.getrusage(resource.RUSAGE_SELF)
         peak_memory_mb = usage.ru_maxrss / 1024
 
@@ -160,9 +203,10 @@ class LocalModel(object):
         total_loss = 0.0
         num_batches = 0
 
-        bs_eval =  self.model_config['batch_size']
+        bs_eval = self.model_config['batch_size']
         for i in range(0, len(self.x_test), bs_eval):
-            xb = self.x_test[i:i+bs_eval].astype(np.float32)
+            # 입력은 여전히 0~255 → Lambda에서 ImageNet norm
+            xb = self.x_test[i:i+bs_eval]
             yb = self.y_test[i:i+bs_eval].astype(np.int32)
 
             pred = self.model.predict(xb, verbose=0)
@@ -225,15 +269,17 @@ class LocalModel(object):
 
             n = min(num_samples, len(self.x_test))
             idxs = np.linspace(0, len(self.x_test) - 1, num=n, dtype=int)
-            xb = self.x_test[idxs].astype(np.float32)
-            pred = self.model.predict(xb, verbose=0)
+
+            xb_vis = self.x_test[idxs]          # 시각화용 원본 (uint8 0~255)
+            xb_pred = xb_vis                    # 모델 입력도 그대로 (정규화는 Lambda에서)
+
+            pred = self.model.predict(xb_pred, verbose=0)
             pred_cls = np.argmax(pred, axis=-1).astype(np.int32)
 
             for j, idx in enumerate(idxs):
-                over = _overlay_mask_on_image(xb[j], pred_cls[j], palette, alpha=alpha)
+                over = _overlay_mask_on_image(xb_vis[j], pred_cls[j], palette, alpha=alpha)
                 Image.fromarray(over).save(os.path.join(out_dir, f"test_{idx}.png"))
 
             print(f"[Overlay] 저장: {out_dir} (샘플 {n}장)")
 
         return miou, fg_miou, pixel_acc, test_loss
-

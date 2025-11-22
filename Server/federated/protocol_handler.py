@@ -25,6 +25,9 @@ class FLProtocolHandler:
         self.current_round = 0
         self.current_round_client_updates: List[Dict] = []
         self.eval_client_updates: List[Dict] = []
+
+        self.model_json = self.global_model.model.to_json()
+        self.global_model.attach_imagenet_norm()
         
         # 모델 ID
         self.model_id = str(uuid.uuid4())
@@ -87,7 +90,7 @@ class FLProtocolHandler:
             data = {
                 'event': 'init', 
                 'payload': {
-                    'model_json': self.global_model.model.to_json(),
+                    'model_json': self.model_json,
                     'model_id': self.model_id,
                     'num_classes': self.config.num_classes,
                     'selected_labels': self.config.selected_labels,
@@ -110,7 +113,7 @@ class FLProtocolHandler:
                 'payload': {
                     'num_classes': self.config.num_classes,
                     'selected_labels': self.config.selected_labels,
-                    'model_json': self.global_model.model.to_json(),
+                    # 'model_json': self.global_model.model.to_json(),
                     'model_id': self.model_id,
                     'current_weights': obj_to_pickle_string(self.global_model.current_weights),
                     'weights_format': 'pickle',
@@ -222,7 +225,7 @@ class FLProtocolHandler:
                 'payload': {
                     'num_classes': self.config.num_classes,
                     'selected_labels': self.config.selected_labels,
-                    'model_json': self.global_model.model.to_json(),
+                    # 'model_json': self.global_model.model.to_json(),
                     'model_id': self.model_id,
                     'current_weights': obj_to_pickle_string(self.global_model.current_weights),
                     'weights_format': 'pickle',

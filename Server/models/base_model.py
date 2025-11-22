@@ -2,10 +2,8 @@ import numpy as np
 import time
 import json
 from utils.pickle_utils import obj_to_pickle_string, pickle_string_to_obj
-import numpy as np
 from keras.models import model_from_json
 import resource 
-import time
 import tensorflow as tf
 from models.datasetLoader import load_synthia_dataset
 import os
@@ -41,41 +39,67 @@ def _make_palette(num_classes: int) -> np.ndarray:
     base = np.asarray(SYNTHIA_RGB, dtype=np.uint8)
     return base[:num_classes]
 
-def _overlay_mask_on_image(img01, mask, palette, alpha=0.5):
-    """
-    img01: float32 [0,1], shape (H,W,3)
-    mask : int32,        shape (H,W), 예측 클래스 맵
-    """
-    # 원본을 uint8로
-    img = (np.clip(img01 * 255.0, 0, 255)).astype(np.uint8)  # (H,W,3)
 
-    # 유효 픽셀 (색칠할 위치)
+def imagenet_denormalize(x):
+    """
+    ImageNet 정규화된 이미지를 [0, 1] 범위로 복원 (시각화용)
+    x: ImageNet normalized, shape (H,W,3)
+    """
+    mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+    std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+    x_denorm = x * std + mean  # 역정규화
+    return np.clip(x_denorm, 0.0, 1.0)
+
+
+def _overlay_mask_on_image(img01, mask, palette, alpha=0.5, is_imagenet_norm=False):
+    """
+    img01 : 
+        - is_imagenet_norm=True  → ImageNet normalized
+        - is_imagenet_norm=False → [0,1] 범위라고 가정
+    mask : int32, shape (H,W), 예측 클래스 맵
+    """
+    if is_imagenet_norm:
+        img01 = imagenet_denormalize(img01)
+
+    # [0, 1] → [0, 255]
+    img = (np.clip(img01 * 255.0, 0, 255)).astype(np.uint8)
+
     valid = (mask != IGNORE_LABEL)
-
-    # 팔레트 인덱싱(모듈로 X, 안전하게 클립)
     idx = np.clip(mask.astype(np.int32), 0, len(palette) - 1)
-    color = palette[idx].astype(np.uint8)                    # (H,W,3)
+    color = palette[idx].astype(np.uint8)
 
-    # 반투명 블렌딩 결과
     blended = (alpha * color + (1.0 - alpha) * img).astype(np.uint8)
 
-    # ignore 픽셀은 원본 유지, 나머지만 덮기
     over = img.copy()
     over[valid] = blended[valid]
     return over
+
+
+# -----------------------------
+# ImageNet 정규화 (모델 입력용)
+# -----------------------------
+def imagenet_preprocess_tf(x):
+    """
+    x : uint8 [0,255] 또는 float32 [0,255]
+    반환 : ImageNet 정규화된 float32
+    """
+    # 함수 내부에서 mean/std 정의 → 전역 변수 의존 X
+    mean = tf.constant([0.485, 0.456, 0.406], dtype=tf.float32)
+    std  = tf.constant([0.229, 0.224, 0.225], dtype=tf.float32)
+
+    x = tf.cast(x, tf.float32) / 255.0
+    x = (x - mean) / std
+    return x
 
 def loss_sparse_ce_ignore_255(y_true, y_pred):
     # y_true: (B,H,W) 또는 (B,H,W,1)
     # y_pred: (B,H,W,C) [softmax]
     y_true = tf.cast(y_true, tf.int32)
 
-    # # (B,H,W,1) -> (B,H,W), (B,H,W)는 그대로 유지
-    # y_true = tf.reshape(y_true, tf.shape(y_true)[:3])
-
     # ignore=255 마스킹
-    mask = tf.not_equal(y_true, IGNORE_LABEL)          # (B,H,W)
-    yt = tf.boolean_mask(y_true, mask)                 # (?,)
-    yp = tf.boolean_mask(y_pred, mask)                 # (?,C)
+    mask = tf.not_equal(y_true, IGNORE_LABEL)
+    yt = tf.boolean_mask(y_true, mask)
+    yp = tf.boolean_mask(y_pred, mask)
 
     loss = tf.keras.losses.sparse_categorical_crossentropy(yt, yp)
     return tf.reduce_mean(loss)
@@ -95,9 +119,15 @@ def masked_pixel_accuracy(y_true, y_pred):
     total   = tf.cast(tf.size(yt), tf.float32)
     return tf.where(total > 0, correct / total, 0.0)
 
+
 class BaseGlobalModel(object):
     """docstring for GlobalModel"""
     def __init__(self, config):
+        # 먼저 config에서 shape/labels 꺼내두고
+        self.selected_labels = config.selected_labels
+        self.input_shape     = config.input_shape  # (H,W,C)
+        self.bs              = config.batch_size
+
         self.model = self.build_model()
         self.current_weights = self.model.get_weights()
         
@@ -112,9 +142,6 @@ class BaseGlobalModel(object):
     
         self.x_test = None
         self.y_test = None
-        self.selected_labels=config.selected_labels
-        self.input_shape=config.input_shape
-        self.bs = config.batch_size
         
         if config.kd_on is True:
             self.kd_handler = KDHandler(
@@ -123,10 +150,33 @@ class BaseGlobalModel(object):
                 ce_loss_fn=loss_sparse_ce_ignore_255
             )
         
+    def attach_imagenet_norm(self):
+        """
+        base_model: ImageNet 정규화가 붙어 있지 않은 순수 Keras 모델
+        self.input_shape: (H,W,C), 0~255 raw 이미지 기준
+
+        """
+        inputs = tf.keras.Input(shape=self.input_shape, name="global_raw_input")
+        x = tf.keras.layers.Lambda(
+            imagenet_preprocess_tf,
+            name="global_imagenet_preprocess"
+        )(inputs)
+        outputs = self.model(x)
+        wrapped = tf.keras.Model(
+            inputs=inputs,
+            outputs=outputs,
+            name="global_with_imagenet_norm"
+        )
+        self.model = wrapped
+
     # ---------------------------------------------------------
     # KD wrapper (BaseGlobalModel은 KDHandler를 "사용만" 함)
     # ---------------------------------------------------------
-    def load_kd_data(self, server_dir, logits_dir, show_progress=False, use_imagenet_norm=True):
+    def load_kd_data(self, server_dir, logits_dir, show_progress=False, use_imagenet_norm=False):
+        """
+        이제 모델 내부에서 ImageNet 정규화를 수행하므로,
+        KD 데이터는 0~255 raw 이미지 형태로 두는 것을 권장 → use_imagenet_norm=False
+        """
         self.kd_handler.load_kd_data(
             server_dir=server_dir,
             logits_dir=logits_dir,
@@ -136,7 +186,7 @@ class BaseGlobalModel(object):
 
     def run_server_kd_epoch(self, lr=1e-4, tau=4.0, lam=0.5, batch_size=2):
         kd_loss = self.kd_handler.run_epoch(
-            student_model=self.model,
+            student_model=self.model,  # 내부에서 ImageNet 정규화
             lr=lr,
             tau=tau,
             lam=lam,
@@ -147,10 +197,14 @@ class BaseGlobalModel(object):
         return kd_loss
     
     def load_dataset(self):
+        """
+        ⚠️ datasetLoader는 X를 0~255 uint8 (또는 float32 [0,255])로 반환하는 버전으로 맞추는 게 좋음.
+        정규화(0~1, ImageNet)는 이 모델 안에서 처리.
+        """
         self.x_test, self.y_test = load_synthia_dataset(
             target_size=self.input_shape,
             binary=False,
-            object_classes= self.selected_labels
+            object_classes=self.selected_labels
         )
         
     @staticmethod
@@ -176,13 +230,11 @@ class BaseGlobalModel(object):
             for i in range(len(new_weights)):
                 w_client = client_weight_obj[i]
                 
-                # numpy array 변환
                 if not isinstance(w_client, np.ndarray):
                     w_client = np.array(w_client, dtype=np.float32)
                 elif w_client.dtype != np.float32:
                     w_client = w_client.astype(np.float32)
                 
-                # 가중 평균 누적
                 new_weights[i] += w_client * weight_factor
         return new_weights
         
@@ -242,7 +294,8 @@ class BaseGlobalModel(object):
 
         bs_eval = self.bs
         for i in range(0, len(self.x_test), bs_eval):
-            xb = self.x_test[i:i+bs_eval].astype(np.float32)
+            # 🔹 입력은 0~255 그대로 → 모델 안에서 ImageNet 정규화 수행
+            xb = self.x_test[i:i+bs_eval]
             yb = self.y_test[i:i+bs_eval].astype(np.int32)
 
             pred = self.model.predict(xb, verbose=0)
@@ -305,12 +358,26 @@ class BaseGlobalModel(object):
 
             n = min(num_samples, len(self.x_test))
             idxs = np.linspace(0, len(self.x_test) - 1, num=n, dtype=int)
-            xb = self.x_test[idxs].astype(np.float32)
-            pred = self.model.predict(xb, verbose=0)
+
+            # 🔹 시각화용: [0,1] 로만 스케일해서 overlay에 넘김
+            xb_raw = self.x_test[idxs]
+            xb_vis = xb_raw.astype(np.float32)
+            max_val = xb_vis.max() if xb_vis.size > 0 else 1.0
+            if max_val > 1.5:
+                xb_vis = xb_vis / 255.0  # 0~255 → 0~1
+
+            # 모델 입력용은 raw 그대로 (정규화는 Lambda에서)
+            pred = self.model.predict(xb_raw, verbose=0)
             pred_cls = np.argmax(pred, axis=-1).astype(np.int32)
 
             for j, idx in enumerate(idxs):
-                over = _overlay_mask_on_image(xb[j], pred_cls[j], palette, alpha=alpha)
+                over = _overlay_mask_on_image(
+                    xb_vis[j],          # [0,1]
+                    pred_cls[j],
+                    palette,
+                    alpha=alpha,
+                    is_imagenet_norm=False
+                )
                 Image.fromarray(over).save(os.path.join(out_dir, f"test_{idx}.png"))
 
             print(f"[Overlay] 저장: {out_dir} (샘플 {n}장)")

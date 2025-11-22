@@ -40,8 +40,8 @@ def make_kd_dataset(
 ):
     t_logits, names = load_teacher_logits(logits_dir)
 
-    rgb_dir = os.path.join(server_dir, "images")
-    label_dir = os.path.join(server_dir, "labels")
+    rgb_dir = os.path.join(server_dir, "RGB")
+    label_dir = os.path.join(server_dir, "LABELS")
 
     X, y = load_images_from_dirs(
         rgb_dir=rgb_dir,

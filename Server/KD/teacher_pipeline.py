@@ -503,7 +503,7 @@ if __name__ == "__main__":
     H, W, _ = model_cfg["input_shape"]
     input_hw = (H, W)
     # batch_size = model_cfg.get("batch_size", 2)
-    batch_size = 8
+    batch_size = 4
 
     print(f"\nConfiguration:")
     print(f"  num_classes: {num_classes}")
@@ -517,7 +517,7 @@ if __name__ == "__main__":
 
     if not os.path.exists(server_dir):
         raise FileNotFoundError(f"Server data directory not found: {server_dir}")
-
+   
     best_ckpt, final_ckpt, log_path = finetune_teacher(
         server_dir=server_dir,
         pretrained_ckpt=city_ckpt,
@@ -526,9 +526,12 @@ if __name__ == "__main__":
         input_hw=input_hw,
         batch_size=batch_size,
         selected_labels=selected_labels,
-        epochs_head=5,
-        epochs_full=20,
-        patience_limit=5,
+        epochs_head=30,     
+        epochs_full=100,    
+        lr_head=1e-3,       
+        lr_full=1e-4,      
+        weight_decay=1e-4,
+        patience_limit=15,  
         device="cuda"
     )
 
