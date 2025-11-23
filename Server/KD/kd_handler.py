@@ -117,7 +117,7 @@ class KDHandler:
         self.kd_y = None            # (N,H,W) int32
         self.teacher_logits = None  # (N,H,W,C) float32
         self.teacher_names = None
-        self.opt = tf.keras.optimizers.Adam(1e-4)
+        self.opt = tf.keras.optimizers.Adam(1e-5)
 
     def _imagenet_normalize_np(self, X):
         mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
@@ -263,7 +263,7 @@ class KDHandler:
             tb_t = tf.convert_to_tensor(tb, dtype=tf.float32)
 
             with tf.GradientTape() as tape:
-                s_pred = student_model(xb_t, training=True)
+                s_pred = student_model(xb_t, training=False)
                 loss = self.kd_loss_with_ce(yb_t, s_pred, tb_t, tau=tau, lam=lam)
 
             grads = tape.gradient(loss, student_model.trainable_variables)

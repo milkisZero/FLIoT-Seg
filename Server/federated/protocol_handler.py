@@ -161,12 +161,29 @@ class FLProtocolHandler:
                     #         self.stop_and_eval()
                     #         return
     
-                    if self.config.kd_on is True and ( self.current_round >= 6 and self.current_round <= 14):
-                        kd_loss = self.global_model.run_server_kd_epoch(
-                            lr=1e-4, tau=4.0, lam=0.8,
-                            batch_size=self.config.batch_size
-                        )
-                        print("KD loss:", kd_loss)
+                    def kd_tau_lam_schedule(round_num,
+                        start_round=5, end_round=20,
+                        tau_start=4.0, tau_end=2.0,
+                        lam_start=0.4, lam_end=0.9):
+
+                        if round_num < start_round or round_num > end_round:
+                            return None
+
+                        t = (round_num - start_round) / float(end_round - start_round)
+                        tau = tau_start + (tau_end - tau_start) * t
+                        lam = lam_start + (lam_end - lam_start) * t
+                        return float(tau), float(lam)
+
+                    kd_loss = -1
+                    if self.config.kd_on is True:
+                        sched = kd_tau_lam_schedule(self.current_round)
+                        if sched is not None:
+                            tau, lam = sched
+                            kd_loss = self.global_model.run_server_kd_epoch(
+                                lr=1e-5, tau=tau, lam=lam,
+                                batch_size=self.config.batch_size
+                            )
+                            print(f"KD on (round={self.current_round}) tau={tau:.3f}, lam={lam:.3f}, kd_loss={kd_loss}")
                     
                     if self.current_round % self.config.ROUNDS_BETWEEN_VALIDATIONS == 0:
                         print(f"Round {self.current_round}: start global test")
@@ -178,7 +195,7 @@ class FLProtocolHandler:
                             'pixel_acc': pixel_acc,
                             'test_loss': test_loss
                         }
-                        if self.config.kd_on is True and ( self.current_round >= 6 and self.current_round <= 14):
+                        if kd_loss > -1:
                             additional_results['kd_loss'] = kd_loss 
 
                         self.result_manager.save_eval_result(
