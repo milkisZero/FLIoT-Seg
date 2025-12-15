@@ -1,302 +1,311 @@
-# FLIoT - Federated Learning for IoT System
+# FLIoT 2nd Gen - Federated Learning for Semantic Segmentation
 
-이 프로젝트는 IoT 플랫폼을 이용한 사이버 공격 탐지 모델 연합학습(Federated Learning) 시스템입니다. CIC-IDS2017 데이터셋을 활용하여 분산된 클라이언트들 간의 협업 학습을 도커로 구현하여 누구나 쉽게 테스트 해 봄을 목적으로 합니다.
+연합학습(Federated Learning)을 활용한 자율주행 환경의 시맨틱 세그멘테이션(Semantic Segmentation) 시스템입니다. SYNTHIA 데이터셋을 사용하여 분산된 클라이언트들 간의 협업 학습을 수행하며, oneM2M 표준 기반의 IoT 플랫폼(Mobius)을 통해 통신합니다.
 
 ## 목차
-- [사전 설치 요구사항](#사전-설치-요구사항)
+
+- [주요 특징](#주요-특징)
+- [시스템 아키텍처](#시스템-아키텍처)
+- [사전 요구사항](#사전-요구사항)
 - [프로젝트 구조](#프로젝트-구조)
 - [시작하기](#시작하기)
-  - [CICIDS2017 데이터셋 다운로드](#1-cicids2017-데이터셋-다운로드)
-  - [환경 설정](#2-환경-설정)
-  - [실행](#3-실행)
-  - [학습 메트릭 시각화](#4-학습-메트릭-시각화)
-  - [공격자 패킷 구현](#5-공격자-패킷-구현)
 - [주요 컴포넌트](#주요-컴포넌트)
-- [유틸리티 도구](#유틸리티-도구)
-- [요구사항](#요구사항)
+- [설정 가이드](#설정-가이드)
 
-## 사전 설치 요구사항
+## 주요 특징
 
-### 1. Docker 설치
+- **연합학습**: FedAvg 알고리즘 기반 분산 학습
+- **Non-IID 데이터 분할**: Dirichlet 분포를 활용한 실제 환경 시뮬레이션
+- **시맨틱 세그멘테이션**: DeepLabV3+ 및 U-Net 모델 지원
+- **Knowledge Distillation**: 서버에서 Teacher 모델을 활용한 성능 향상
+- **IoT 플랫폼 연동**: oneM2M 표준 기반 Mobius/nCube 통신
+- **GPU 지원**: TensorFlow GPU 가속 및 자동 메모리 관리
+- **실시간 모니터링**: 학습 메트릭 및 성능 지표 추적
+
+## 시스템 아키텍처
+
+```
+┌─────────────┐     oneM2M      ┌─────────────┐
+│   Client 1  │◄───────────────►│             │
+├─────────────┤                 │   Mobius    │
+│   Client 2  │◄───────────────►│    IoT      │
+├─────────────┤                 │  Platform   │
+│   Client 3  │◄───────────────►│             │
+└─────────────┘                 └──────┬──────┘
+                                       │
+                                       ▼
+                                ┌─────────────┐
+                                │ FL Server   │
+                                │ (FedAvg +   │
+                                │     KD)     │
+                                └─────────────┘
+```
+
+## 사전 요구사항
+
+### 1. Docker 및 Docker Compose
+
 ```bash
-# Docker 설치 스크립트 다운로드 및 실행
+# Docker 설치
 curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
 
-# Docker 서비스 시작
-sudo systemctl start docker
-sudo systemctl enable docker
-
-# 현재 사용자를 docker 그룹에 추가 (sudo 없이 docker 명령어 실행 가능)
-sudo usermod -aG docker $USER
-newgrp docker
-```
-
-### 2. Docker Compose 설치
-```bash
 # Docker Compose 설치
 sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
 sudo chmod +x /usr/local/bin/docker-compose
 
-# 설치 확인
-docker-compose --version
+# 현재 사용자를 docker 그룹에 추가
+sudo usermod -aG docker $USER
+newgrp docker
 ```
 
-### 3. Python 환경 설정
+### 2. Python 3.7+ 환경
+
 ```bash
-# Python 3.7 이상 및 pip 설치
+# Python 및 pip 설치
 sudo apt update
-sudo apt install -y python3 python3-pip
+sudo apt install -y python3 python3-pip python3-venv
 
-# 가상환경 패키지 설치
-sudo apt install -y python3-venv
-
-# 가상환경 생성 및 활성화
+# 가상환경 생성 (선택사항)
 python3 -m venv venv
 source venv/bin/activate
-
-# 필요한 Python 패키지 설치
-pip install pandas numpy scikit-learn matplotlib seaborn python-dotenv tqdm
-
-# 또는 requirements.txt 파일로 한 번에 설치
-cat > requirements.txt << EOL
-pandas
-numpy
-scikit-learn
-matplotlib
-seaborn
-python-dotenv
-tqdm
-EOL
-
-pip install -r requirements.txt
 ```
 
-### 4. Git 설치 및 프로젝트 클론
-```bash
-# Git 설치
-sudo apt install -y git
+### 3. SYNTHIA 데이터셋
 
-# 프로젝트 클론
-git clone https://github.com/ansrudgh/FLIoT.git
-cd FLIoT
-```
-
-### 5. 실행 권한 설정
-```bash
-# 스크립트 파일에 실행 권한 부여
-chmod +x setup.sh
-```
+- [SYNTHIA 데이터셋](https://synthia-dataset.net/) 다운로드
+- `Data/SYNTHIA/` 폴더에 압축 해제
+- RGB 이미지 및 시맨틱 레이블 필요
 
 ## 프로젝트 구조
 
 ```
-FLIoT
-├── 📁 Client/              # 클라이언트 관련 코드
-├── 📁 Server/              # 서버 관련 코드
-├── 📁 Mobius/              # Mobius 플랫폼 관련 코드
-├── 📁 nCube/               # nCube 관련 코드
-├── 📁 template/            # 도커 템플릿 파일
-├── 📁 envset/              # 하드웨어 초기 설정 파일
-│   ├── 📁 forjetinit/      # Jetson 초기 설정
-│   └── 📁 forraspinit/     # Raspberry Pi 초기 설정
-├── 📁 results/             # 학습 결과 저장 폴더 (도커 실행 시 자동 생성)
-├── 📁 graphs/              # 학습 메트릭 그래프 저장 폴더 (makegraph.py 실행 시 자동 생성)
-├── .env.example            # 환경 변수 예제 파일
-├── setup.sh                # 도커 환경 설정 스크립트
-├── makegraph.py            # 학습 메트릭 시각화 도구
-└── label_csv_sender.py     # 데이터 셋 기반 공격자 코드
+FLIoT2ndGen/
+├── Client/                # 클라이언트 구현
+│   ├── fl_client.py       # 메인 클라이언트 로직
+│   ├── communication/     # TCP 통신 모듈
+│   ├── federated/         # FL 프로토콜 핸들러
+│   ├── model/             # 로컬 모델 및 데이터 로더
+│   └── utils/             # GPU 설정, Pickle 유틸리티
+├── Server/                # 서버 구현
+│   ├── fl_server.py       # 메인 서버 로직
+│   ├── communication/     # Mobius API 통신
+│   ├── federated/         # FedAvg 집계 로직
+│   ├── KD/                # Knowledge Distillation
+│   ├── models/            # 글로벌 모델 정의
+│   └── utils/             # GPU 설정, Pickle 유틸리티
+├── Data/                  # 데이터셋 관리
+│   ├── DataSplitter.py    # 데이터 분할 스크립트
+│   ├── non_iid_split.py   # Non-IID 분할 로직
+│   └── SYNTHIA/           # SYNTHIA 데이터셋 (사용자 추가)
+├── Mobius/                # oneM2M IoT 플랫폼
+│   └── mobius/            # Mobius 서버 코드
+├── nCube/                 # IoT 게이트웨이
+│   └── thyme.js           # nCube 메인 서버
+├── template/              # Docker Compose 템플릿
+├── envset/                # 하드웨어 초기 설정
+├── results/               # 학습 결과 저장 (자동 생성)
+├── .env.example           # 환경 변수 예제
+├── docker-compose.yaml    # Docker Compose 설정
+└── setup.sh               # 환경 설정 스크립트
 ```
-
-> 📁 기본 폴더
 
 ## 시작하기
 
-### 1. CICIDS2017 데이터셋 다운로드
-   - [CICIDS2017 공식 다운로드 페이지](https://www.unb.ca/cic/datasets/ids-2017.html)에서 데이터셋을 다운로드
-   - 다운로드한 CSV 파일들을 `Client/CICIDS/` 폴더에 저장
+### 1. 데이터셋 준비
+
+```bash
+# SYNTHIA 데이터셋을 Data/SYNTHIA/ 폴더에 저장 후 실행
+cd Data
+python3 DataSplitter.py
+```
+
+이 스크립트는 다음을 수행합니다:
+- `.env` 파일의 설정에 따라 데이터를 Non-IID로 분할
+- 클라이언트별 train/test 데이터셋 생성
+- `Server/SYNTHIA_Splitted/` 폴더에 분할된 데이터 저장
+- 데이터 분포 시각화 그래프 생성
 
 ### 2. 환경 설정
-   ```bash
-   # setup.sh 실행
-   ./setup.sh
-   ```
-   
-   setup.sh 스크립트는 다음과 같은 자동화 작업을 수행합니다:
-   - .env 파일이 없는 경우 .env.example을 자동으로 .env로 복사
-   - template/ 폴더의 템플릿을 기반으로 docker-compose.yaml 파일 생성
-   - .env 파일의 설정을 기반으로 도커 네트워크 구성
-   - DatasetPreprocessCICIDS2017.py를 자동으로 실행하여 Client/CICIDS_Splitted/ 폴더에 데이터셋 분할
 
-### 3. 실행
-   ```bash
-   # 도커 컴포즈로 실행
-   docker-compose up -d --build
-   ```
-   
-   실행 시 자동으로 수행되는 작업:
-   - 서버
-     - Mobius IoT 플랫폼 연결
-     - AE(AE) 감지 및 구독 설정
-     - 컨테이너(CNT) 구독 설정
-     - 글로벌 모델 초기화
-   - 클라이언트
-     - Gateway 서버와 TCP 소켓 통신
-     - 로컬 모델 학습 및 평가
-     - 실시간 패킷 분류
-     - 학습 결과 및 메트릭 전송
-   
-   종료 방법:
-   ```bash
-   # 컨테이너와 볼륨 모두 제거
-   docker-compose down -v
-   ```
-   
-   실행 시 자동으로 생성되는 폴더:
-   - `results/`: 각 클라이언트의 학습 결과와 메트릭이 저장되는 폴더
-     - CPU/GPU 사용량
-     - 학습 시간
-     - 메모리 사용량 등의 정보가 JSON 형식으로 저장
+```bash
+# .env 파일 생성
+cp .env.example .env
 
-### 4. 학습 메트릭 시각화
-   ```bash
-   # 필요한 패키지 설치
-   pip3 install matplotlib pandas numpy seaborn argparse
-   
-   # 그래프 생성
-   python3 makegraph.py results/
-   ```
-   
-   makegraph.py 실행 시 자동으로 생성되는 폴더:
-   - `graphs/`: 학습 메트릭 시각화 결과가 저장되는 폴더
-     - CPU/GPU 사용량 그래프
-     - 학습 시간 그래프
-     - 메모리 사용량 그래프가 PNG 형식으로 저장
+# .env 파일 편집하여 설정 조정
+# - CLIENT: 클라이언트 수
+# - LABEL: 사용할 클래스 (ALL 또는 인덱스)
+# - DIRICHLET_ALPHA: Non-IID 강도 (작을수록 불균형)
+# - RATIO: 클라이언트별 데이터 비율
+# - TR_RATIO: 각 클라이언트의 train/test 비율
 
-### 5. 공격자 패킷 구현
-   ```bash
-   # 필요한 패키지 설치
-   pip3 install pandas numpy scikit-learn python-dotenv
-   
-   # 자동 모드로 실행 (환경 변수 사용)
-   python3 label_csv_sender.py --auto
-   
-   # 수동 모드로 실행
-   python3 label_csv_sender.py
-   ```
-   
-   label_csv_sender.py는 다음과 같은 기능을 수행합니다:
-   - CICIDS2017 데이터셋을 기반으로 공격자 패킷 생성
-   - 선택된 공격 유형의 패킷을 클라이언트로 전송
-   - TCP 소켓을 통한 실시간 패킷 전송
-   
-   실행 시 필요한 환경 변수 (.env 파일):
-   - LABEL: 선택할 공격 유형 인덱스 (공백으로 구분)
-   - CLIENT: 공격 대상 클라이언트 수
+# setup.sh 실행 (선택사항)
+./setup.sh
+```
+
+### 3. Docker Compose로 실행
+
+```bash
+# 컨테이너 빌드 및 실행
+docker-compose up -d --build
+
+# 로그 확인
+docker-compose logs -f
+
+# 특정 서비스 로그 확인
+docker-compose logs -f server
+docker-compose logs -f client_1
+```
+
+실행 시 자동으로 수행되는 작업:
+- **Mobius**: oneM2M IoT 플랫폼 시작
+- **nCube**: IoT 게이트웨이 초기화 및 Mobius 연결
+- **Server**: 글로벌 모델 초기화, AE/CNT 구독 설정
+- **Clients**: 로컬 모델 로드, 서버와 통신 시작, 학습 시작
+
+### 4. 종료
+
+```bash
+# 컨테이너 중지 및 제거
+docker-compose down
+
+# 볼륨까지 모두 제거
+docker-compose down -v
+```
 
 ## 주요 컴포넌트
 
-- **Client**: 연합학습에 참여하는 개별 클라이언트 구현
-  - 서버와의 통신 처리
-    - Gateway 서버와 TCP 소켓 통신
-    - 모델 가중치 및 학습 결과 전송
-    - 실시간 학습 메트릭 전송 (loss, accuracy 등)
-    - Gateway를 통한 중앙 서버와의 통신
-  - 공격자 패킷 처리
-    - 공격자 클라이언트의 TCP 연결 수신
-    - 실시간 패킷 분류 및 결과 전송
-    - 분류 결과 통계 수집 및 전송
-  - 로컬 모델 학습
-    - TensorFlow/Keras 기반 딥러닝 모델
-    - GPU/CPU 자동 감지 및 설정
-    - 학습 메트릭 수집 (시간, 메모리 사용량)
-  - 모델 평가 및 분류
-    - 실시간 패킷 분류 (normal/anomaly)
-    - 분류 결과 통계 수집
-    - F1-score, Precision, Recall 계산
-  - 자동화된 기능
-    - 학습 결과 자동 저장 (JSON 형식)
-    - GPU 메모리 자동 관리
-    - 오류 복구 및 재연결
-  - 자세한 내용은 [Client/README.md](Client/README.md) 참조
-- **Server**: 중앙 서버 구현
+### Client
+- **역할**: 로컬 데이터로 모델 학습 및 서버에 가중치 전송
+- **주요 기능**:
+  - 로컬 모델 학습 (DeepLabV3+/U-Net)
+  - TCP 기반 서버 통신
+  - GPU/CPU 자동 감지 및 활용
+  - 학습 메트릭 수집 및 전송
+- 자세한 내용: [Client/README.md](Client/README.md)
+
+### Server
+- **역할**: 클라이언트 모델 집계 및 글로벌 모델 업데이트
+- **주요 기능**:
+  - FedAvg 알고리즘 구현
+  - Knowledge Distillation (Teacher 모델)
   - Mobius IoT 플랫폼 연동
-    - AE(AE) 감지 및 구독 (aeWatcher)
-    - 컨테이너(CNT) 구독 및 관리
-    - 클라이언트와의 pub/sub 통신
-  - 연합학습 관리
-    - FedAvg 알고리즘 구현
-    - 글로벌 모델 가중치 집계
-    - 클라이언트 모델 업데이트
-  - 학습 메트릭 수집
-    - 손실 함수 값 및 정확도
-    - CPU/GPU 사용량
-    - 메모리 사용량
-  - 자세한 내용은 [Server/README.md](Server/README.md) 참조
-- **Mobius**: IoT 플랫폼 연동
-  - `conf.json`: Mobius 서버 설정 파일
-    - IP 주소 및 포트 설정
-    - MQTT, CoAP, WebSocket 프로토콜 설정
-  - `pxy_mqtt.js`: MQTT 프록시 설정
-  - `pxy_coap.js`: CoAP 프록시 설정
-  - `pxy_ws.js`: WebSocket 프록시 설정
-  - 자세한 내용은 [Mobius/README.md](Mobius/README.md) 참조
-- **nCube**: IoT 게이트웨이 구현
-  - `conf.js`: nCube 서버 설정 파일
-    - IP 주소 및 포트 설정
-    - MQTT 브로커 설정
-  - `onem2m_client.js`: oneM2M 클라이언트 구현
-  - `thyme_tas.js`: Thing Adaptation Software 구현
-  - `tas_emulator_FL2.js`: TAS 에뮬레이터
-  - `thyme.js`: nCube 메인 서버
-    - oneM2M 표준 기반 IoT 디바이스 구현
-    - Mobius 서버와의 통신 처리
-    - IP 변경 시 conf.js의 설정 확인 필요
-  - 자세한 내용은 [nCube/README.md](nCube/README.md) 참조
-- **envset**: 도커 외 하드웨어 초기 설정
-  - `forjetinit/`: Jetson 보드 초기 설정
-    - Jetson 보드의 기본 환경 설정
-    - CUDA 및 TensorRT 설치 및 설정
-    - 필요한 패키지 설치 (Python, pip, numpy 등)
-  - `forraspinit/`: Raspberry Pi 초기 설정
-    - Raspberry Pi의 기본 환경 설정
-    - 필요한 패키지 설치 (Python, pip, RPi.GPIO 등)
+  - 학습 진행 상황 모니터링
+- 자세한 내용: [Server/README.md](Server/README.md)
 
-## 유틸리티 도구
+### Mobius
+- **역할**: oneM2M 표준 기반 IoT 플랫폼
+- **기능**: AE/CNT 관리, pub/sub 통신
+- 자세한 내용: [Mobius/README.md](Mobius/README.md)
 
-- **setup.sh**: 도커 환경 설정 스크립트
-  - .env 파일의 설정을 기반으로 도커 컴포즈 파일 생성
-  - 네트워크 설정 및 컨테이너 구성
-  - 환경 변수 자동 설정
-  - 데이터셋 전처리 자동화
+### nCube
+- **역할**: IoT 게이트웨이
+- **기능**: 디바이스와 Mobius 간 통신 중개
+- 자세한 내용: [nCube/README.md](nCube/README.md)
 
-- **makegraph.py**: 학습 메트릭 시각화 도구
-  - CPU/GPU 사용량 그래프 생성
-  - 학습 시간 및 메모리 사용량 분석
-  - results/ 폴더의 JSON 파일을 기반으로 시각화
-  - graphs/ 폴더에 PNG 형식으로 그래프 저장
+## 설정 가이드
 
-- **label_csv_sender.py**: 공격자 패킷 구현 도구
-  - CICIDS2017 데이터셋을 기반으로 공격자 패킷 생성
-  - 선택된 공격 유형의 패킷을 클라이언트로 전송
-  - TCP 소켓을 통한 실시간 패킷 전송
+### 환경 변수 (.env)
 
-## 요구사항
+```bash
+# 네트워크 설정
+DOCKER_NETWORK=172.20.0.
 
-- **Python 환경**
-  - Python 3.7 이상 설치
-  - pip3 패키지 관리자 설치
-  - 가상환경 사용 권장 (venv 또는 conda)
+# 사용할 클래스 (ALL 또는 0~18 인덱스)
+LABEL=ALL
 
-- **Docker 환경**
-  - Docker Engine 설치
-  - Docker Compose 설치
-  - Docker 네트워크 설정 권장
+# 입력 이미지 크기 (높이 너비 채널)
+INPUT_SHAPE=432 768 3
 
-- **패키지 의존성**
-  - 각 폴더의 `requirements.txt` 파일 참조
-  - 주요 패키지:
-    - pandas, numpy: 데이터 처리
-    - scikit-learn: 머신러닝
-    - matplotlib, seaborn: 시각화
-    - python-dotenv: 환경 변수 관리
+# 데이터 셔플 강도 (0=원래 순서, 1=완전 랜덤)
+SHUFFLE_INTENSITY=0
+
+# Global Test 데이터 비율
+GLOBAL_TEST_RATIO=0.1
+
+# 서버용 데이터 비율
+SERVER_RATIO=0.1
+
+# 클라이언트 수
+CLIENT=3
+
+# 클라이언트별 데이터 비율
+RATIO=1 1 1
+
+# 각 클라이언트의 train/test 비율
+TR_RATIO=0.8 0.8 0.8
+
+# Dirichlet 알파 (작을수록 Non-IID 강도 증가)
+DIRICHLET_ALPHA=0.1
+```
+
+### Docker Compose 설정
+
+주요 서비스:
+- `db`: MySQL 데이터베이스 (Mobius용)
+- `mobius`: oneM2M IoT 플랫폼
+- `nCube`: IoT 게이트웨이
+- `server`: 연합학습 서버
+- `client_1`, `client_2`, `client_3`: 연합학습 클라이언트
+
+각 서비스는 `federated_network` (172.20.0.0/24)에 연결됩니다.
+
+## 학습 결과
+
+학습 결과는 `results/` 폴더에 자동 저장됩니다:
+- 각 라운드별 모델 가중치
+- 학습 메트릭 (loss, accuracy, IoU)
+- 성능 지표 (CPU/GPU 사용량, 메모리, 학습 시간)
+
+## 주요 알고리즘
+
+### FedAvg (Federated Averaging)
+- 클라이언트들의 로컬 모델 가중치를 데이터 크기 기반으로 가중 평균
+- 글로벌 모델 업데이트
+
+### Knowledge Distillation
+- 서버에서 Teacher 모델 학습
+- Teacher의 지식을 클라이언트에 전달하여 성능 향상
+
+### Non-IID Data Split
+- Dirichlet 분포를 활용한 불균형 데이터 분할
+- 실제 환경의 데이터 이질성 시뮬레이션
+
+## 문제 해결
+
+### GPU 메모리 부족
+```python
+# Client/utils/gpu_setup.py 또는 Server/utils/gpu_setup.py에서
+# GPU 메모리 성장 허용 설정 확인
+```
+
+### Mobius 연결 실패
+```bash
+# Mobius 컨테이너 상태 확인
+docker-compose logs mobius
+
+# DB 헬스체크 확인
+docker-compose ps db
+```
+
+### 데이터 로드 오류
+```bash
+# 데이터 분할이 올바르게 되었는지 확인
+ls -la Data/SYNTHIA/
+ls -la Server/SYNTHIA_Splitted/
+```
+
+## 참고 문헌
+
+- [Federated Learning](https://arxiv.org/abs/1602.05629)
+- [SYNTHIA Dataset](https://synthia-dataset.net/)
+- [oneM2M Standard](https://www.onem2m.org/)
+- [DeepLabV3+](https://arxiv.org/abs/1802.02611)
+
+## 라이선스
+
+이 프로젝트는 연구 및 교육 목적으로 사용됩니다.
+
+## 기여
+
+버그 리포트 및 개선 제안은 Issue를 통해 제출해주세요.
