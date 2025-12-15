@@ -4,6 +4,7 @@ Federated Learning 프로토콜 핸들러
 import random
 import json
 import uuid
+import threading
 from typing import Set, List, Dict
 from utils.pickle_utils import obj_to_pickle_string, pickle_string_to_obj
 import sys
@@ -17,18 +18,22 @@ class FLProtocolHandler:
         self.mobius = mobius_handler
         self.result_manager = result_manager
         self.config = config
-        
+
+        # 동시성 제어를 위한 락
+        self.lock = threading.Lock()
+
         # 클라이언트 관리
         self.ready_client_sids: Set[str] = set()
-        
+
         # 라운드 관리
         self.current_round = 0
         self.current_round_client_updates: List[Dict] = []
         self.eval_client_updates: List[Dict] = []
+        self.is_aggregating = False  # 집계 중 플래그
 
         self.model_json = self.global_model.model.to_json()
         self.global_model.attach_imagenet_norm()
-        
+
         # 모델 ID
         self.model_id = str(uuid.uuid4())
      
@@ -67,23 +72,24 @@ class FLProtocolHandler:
             print("none exist client_id!!")
              
     def register_handles(self, payload, client_id):
-        # single-threaded async, no need to lock
-        
         event = payload['event']
-            
+
         if event == 'connect':
             print(client_id, "connected")# # request.sid,,,io客户端的sid, socketio用此唯一标识客户端.
             print('\033[1;35;0m connected \033[0m')
-            self.ready_client_sids.add(client_id)
-            
+            with self.lock:
+                self.ready_client_sids.add(client_id)
+
         elif event == 'reconnect':
             print(client_id, "reconnect")
-            self.ready_client_sids.add(client_id)
-            
+            with self.lock:
+                self.ready_client_sids.add(client_id)
+
         elif event == 'disconnect':
             print(client_id, "disconnected")
-            if client_id in self.ready_client_sids:
-                self.ready_client_sids.remove(client_id)
+            with self.lock:
+                if client_id in self.ready_client_sids:
+                    self.ready_client_sids.remove(client_id)
                 
         elif event == 'client_wake_up':            
             print("client wake_up: ", client_id)
@@ -106,8 +112,14 @@ class FLProtocolHandler:
         elif event == 'client_ready':
             data = payload['payload']
             print("client ready for training", client_id, data)
-            self.ready_client_sids.add(client_id)
-            
+
+            should_start_training = False
+            with self.lock:
+                self.ready_client_sids.add(client_id)
+
+                if self.current_round == 0 and len(self.ready_client_sids) >= self.config.MIN_NUM_WORKERS:
+                    should_start_training = True
+
             data={
                 'event': 'global_update',
                 'payload': {
@@ -121,7 +133,7 @@ class FLProtocolHandler:
             }
             self.mobius.publish(client_id+'FromS', data)
 
-            if self.current_round == 0 and len(self.ready_client_sids) >= self.config.MIN_NUM_WORKERS :
+            if should_start_training:
                 self.train_next_round()
                 
         elif event == 'client_update':
@@ -129,95 +141,109 @@ class FLProtocolHandler:
             print("received client update of bytes: ", sys.getsizeof(data))
             print("handle client_update", client_id)
             print('\033[1;35;0m handle client_update \033[0m')
-            if data['round_number'] == self.current_round:
-                self.current_round_client_updates.append(data)
 
-                if len(self.current_round_client_updates) >= self.config.NUM_CLIENTS_CONTACTED_PER_ROUND:
-                    # All selected clients for this round have replied.
-                    self.global_model.update_weights(
-                        [x['weights'] for x in self.current_round_client_updates],
-                        [x['train_size'] for x in self.current_round_client_updates],
-                    )
+            should_aggregate = False
+            with self.lock:
+                # 현재 라운드와 일치하고 집계 중이 아닐 때만 추가
+                if data['round_number'] == self.current_round and not self.is_aggregating:
+                    self.current_round_client_updates.append(data)
 
-                    aggr_train_loss = self.global_model.aggregate_train_loss_accuracy(
-                        [x['train_loss'] for x in self.current_round_client_updates],
-                        [x['train_size'] for x in self.current_round_client_updates],
-                        self.current_round
-                    )
+                    if len(self.current_round_client_updates) >= self.config.NUM_CLIENTS_CONTACTED_PER_ROUND:
+                        should_aggregate = True
+                        self.is_aggregating = True  # 집계 시작 플래그
 
-                    print("Aggregated training loss:", aggr_train_loss)
+            if should_aggregate:
+                # 락 외부에서 시간이 오래 걸리는 작업 수행
+                # All selected clients for this round have replied.
+                self.global_model.update_weights(
+                    [x['weights'] for x in self.current_round_client_updates],
+                    [x['train_size'] for x in self.current_round_client_updates],
+                )
 
-                    # # New convergence checking logic:
-                    # if len(self.global_model.train_losses) >= (2 * self.config.WINDOW_SIZE):
-                    #     # Get the last WINDOW_SIZE losses and the previous WINDOW_SIZE losses.
-                    #     last_window = [entry[2] for entry in self.global_model.train_losses[-self.config.WINDOW_SIZE:]]
-                    #     prev_window = [entry[2] for entry in self.global_model.train_losses[-(2 * self.config.WINDOW_SIZE):-self.config.WINDOW_SIZE]]
-                    #     avg_recent = sum(last_window) / self.config.WINDOW_SIZE
-                    #     avg_previous = sum(prev_window) / self.config.WINDOW_SIZE
-                    #     print("Average loss for last", self.config.WINDOW_SIZE, "rounds:", avg_recent)
-                    #     print("Average loss for previous", self.config.WINDOW_SIZE, "rounds:", avg_previous)
-                    #     if avg_recent >= avg_previous:
-                    #         print("Convergence criterion met (recent average loss is not lower than previous average). Triggering evaluation.")
-                    #         self.stop_and_eval()
-                    #         return
-    
-                    def kd_tau_lam_schedule(round_num,
-                        start_round=5, end_round=20,
-                        tau_start=4.0, tau_end=2.0,
-                        lam_start=0.4, lam_end=0.9):
+                aggr_train_loss = self.global_model.aggregate_train_loss_accuracy(
+                    [x['train_loss'] for x in self.current_round_client_updates],
+                    [x['train_size'] for x in self.current_round_client_updates],
+                    self.current_round
+                )
 
-                        if round_num < start_round or round_num > end_round:
-                            return None
+                print("Aggregated training loss:", aggr_train_loss)
 
-                        t = (round_num - start_round) / float(end_round - start_round)
-                        tau = tau_start + (tau_end - tau_start) * t
-                        lam = lam_start + (lam_end - lam_start) * t
-                        return float(tau), float(lam)
+                # # New convergence checking logic:
+                # if len(self.global_model.train_losses) >= (2 * self.config.WINDOW_SIZE):
+                #     # Get the last WINDOW_SIZE losses and the previous WINDOW_SIZE losses.
+                #     last_window = [entry[2] for entry in self.global_model.train_losses[-self.config.WINDOW_SIZE:]]
+                #     prev_window = [entry[2] for entry in self.global_model.train_losses[-(2 * self.config.WINDOW_SIZE):-self.config.WINDOW_SIZE]]
+                #     avg_recent = sum(last_window) / self.config.WINDOW_SIZE
+                #     avg_previous = sum(prev_window) / self.config.WINDOW_SIZE
+                #     print("Average loss for last", self.config.WINDOW_SIZE, "rounds:", avg_recent)
+                #     print("Average loss for previous", self.config.WINDOW_SIZE, "rounds:", avg_previous)
+                #     if avg_recent >= avg_previous:
+                #         print("Convergence criterion met (recent average loss is not lower than previous average). Triggering evaluation.")
+                #         self.stop_and_eval()
+                #         return
 
-                    kd_loss = -1
-                    if self.config.kd_on is True:
-                        sched = kd_tau_lam_schedule(self.current_round)
-                        if sched is not None:
-                            tau, lam = sched
-                            kd_loss = self.global_model.run_server_kd_epoch(
-                                lr=1e-5, tau=tau, lam=lam,
-                                batch_size=self.config.batch_size
-                            )
-                            print(f"KD on (round={self.current_round}) tau={tau:.3f}, lam={lam:.3f}, kd_loss={kd_loss}")
-                    
-                    if self.current_round % self.config.ROUNDS_BETWEEN_VALIDATIONS == 0:
-                        print(f"Round {self.current_round}: start global test")
-                        
-                        miou, fg_miou, pixel_acc, test_loss = self.global_model.evaluate_global(round_number=self.current_round)
-                        additional_results = {
-                            'miou': miou,
-                            'fg_miou': fg_miou,
-                            'pixel_acc': pixel_acc,
-                            'test_loss': test_loss
-                        }
-                        if kd_loss > -1:
-                            additional_results['kd_loss'] = kd_loss 
+                def kd_tau_lam_schedule(round_num,
+                    start_round=5, end_round=20,
+                    tau_start=4.0, tau_end=2.0,
+                    lam_start=0.4, lam_end=0.9):
 
-                        self.result_manager.save_eval_result(
-                            round_number=self.current_round,
-                            eval_metrics=additional_results
+                    if round_num < start_round or round_num > end_round:
+                        return None
+
+                    t = (round_num - start_round) / float(end_round - start_round)
+                    tau = tau_start + (tau_end - tau_start) * t
+                    lam = lam_start + (lam_end - lam_start) * t
+                    return float(tau), float(lam)
+
+                kd_loss = -1
+                if self.config.kd_on is True:
+                    sched = kd_tau_lam_schedule(self.current_round)
+                    if sched is not None:
+                        tau, lam = sched
+                        kd_loss = self.global_model.run_server_kd_epoch(
+                            lr=1e-5, tau=tau, lam=lam,
+                            batch_size=self.config.batch_size
                         )
-                    
-                    if self.current_round == self.config.MAx_NUM_ROUNDS:
-                        print("Maximum rounds reached. Triggering evaluation.")
-                        self.stop_and_eval()
-                    else:
-                        self.train_next_round()
+                        print(f"KD on (round={self.current_round}) tau={tau:.3f}, lam={lam:.3f}, kd_loss={kd_loss}")
 
+                if self.current_round % self.config.ROUNDS_BETWEEN_VALIDATIONS == 0:
+                    print(f"Round {self.current_round}: start global test")
+
+                    miou, fg_miou, pixel_acc, test_loss = self.global_model.evaluate_global(round_number=self.current_round)
+                    additional_results = {
+                        'miou': miou,
+                        'fg_miou': fg_miou,
+                        'pixel_acc': pixel_acc,
+                        'test_loss': test_loss
+                    }
+                    if kd_loss > -1:
+                        additional_results['kd_loss'] = kd_loss
+
+                    self.result_manager.save_eval_result(
+                        round_number=self.current_round,
+                        eval_metrics=additional_results
+                    )
+
+                if self.current_round == self.config.MAx_NUM_ROUNDS:
+                    print("Maximum rounds reached. Triggering evaluation.")
+                    self.stop_and_eval()
+                else:
+                    self.train_next_round()
+
+                with self.lock:
                     self.current_round_client_updates = []
+                    self.is_aggregating = False  # 집계 완료
                     
         elif event == 'client_eval':
             data = payload['payload']
-            if self.eval_client_updates is None:
-                return
+
+            with self.lock:
+                if self.eval_client_updates is None:
+                    return
+                self.eval_client_updates += [data]
+
             print("handle client_eval", client_id)
             print("eval_resp", data)
-            self.eval_client_updates += [data]
 
             print('\033[1;35;0m == done == \033[0m')  # 有高亮 或者 print('\033[1;35m字体有色，但无背景色 \033[0m')
             # If the response contains a 'round_number', then it is an intermediate evaluation.
@@ -228,18 +254,22 @@ class FLProtocolHandler:
                 # Otherwise, training is complete. Print total training time cost.
                 total_training_time = time.time() - self.global_model.training_start_time
                 print('Total training time cost:', total_training_time)
-      
-            self.eval_client_updates = None  # Prevent further evaluation
+
+            with self.lock:
+                self.eval_client_updates = None  # Prevent further evaluation
 
     # Note: we assume that during training thlen(e #workers will be >= MI)N_NUM_WORKERS
     def train_next_round(self):
-        self.current_round += 1
-        # buffers all client updates
-        self.current_round_client_updates = []
+        with self.lock:
+            self.current_round += 1
+            # buffers all client updates
+            self.current_round_client_updates = []
+            current_round = self.current_round
+            ready_clients = list(self.ready_client_sids)
 
-        print("### Round ", self.current_round, "###")
-        
-        for rid in list(self.ready_client_sids):
+        print("### Round ", current_round, "###")
+
+        for rid in ready_clients:
             data = {
                 'event': 'global_update',
                 'payload': {
@@ -253,33 +283,36 @@ class FLProtocolHandler:
             }
             self.mobius.publish(rid+'FromS', data)
         print("Broadcasted global update to all ready clients.")
-        
-        client_sids_selected = random.sample(list(self.ready_client_sids), self.config.NUM_CLIENTS_CONTACTED_PER_ROUND)#为了提取出N个不同元素的样本用来(所有内容，需要的数量)
+
+        client_sids_selected = random.sample(ready_clients, self.config.NUM_CLIENTS_CONTACTED_PER_ROUND)#为了提取出N个不同元素的样本用来(所有内容，需要的数量)
         print("request updates from", client_sids_selected)
 
         for rid in client_sids_selected:
             data = {
-                'event': 'request_update', 
+                'event': 'request_update',
                 'payload' : {
                     'model_id': self.model_id,
-                    'round_number': self.current_round,
+                    'round_number': current_round,
                     'current_weights': obj_to_pickle_string(self.global_model.current_weights),
 
                     'weights_format': 'pickle',
-                    'run_validation': self.current_round % self.config.ROUNDS_BETWEEN_VALIDATIONS == 0,
+                    'run_validation': current_round % self.config.ROUNDS_BETWEEN_VALIDATIONS == 0,
                 }
             }
             self.mobius.publish(rid+'FromS', data)
-            
-        if self.current_round % self.config.ROUNDS_BETWEEN_VALIDATIONS == 0:
-            print("Round {} is a validation round; requesting evaluation from all clients.".format(self.current_round))
+
+        if current_round % self.config.ROUNDS_BETWEEN_VALIDATIONS == 0:
+            print("Round {} is a validation round; requesting evaluation from all clients.".format(current_round))
             self.request_eval()
 
     def stop_and_eval(self):
         #self.global_model.save("global_model.h5")
-        self.eval_client_updates = []
+        with self.lock:
+            self.eval_client_updates = []
+            ready_clients = list(self.ready_client_sids)
+
         # self.stop_training = True  # 종료 플래그 설정
-        for rid in self.ready_client_sids:
+        for rid in ready_clients:
             data = {
                 'event': 'stop_and_eval',
                 'payload':  {
@@ -291,12 +324,16 @@ class FLProtocolHandler:
             self.mobius.publish(rid+'FromS', data)
 
     def request_eval(self):
-        for rid in self.ready_client_sids:
+        with self.lock:
+            ready_clients = list(self.ready_client_sids)
+            current_round = self.current_round
+
+        for rid in ready_clients:
             data = {
                 'event': 'request_eval',
                 'payload': {
                     'model_id': self.model_id,
-                    'round_number': self.current_round,
+                    'round_number': current_round,
                     'current_weights': obj_to_pickle_string(self.global_model.current_weights),
                     'weights_format': 'pickle'
                 }

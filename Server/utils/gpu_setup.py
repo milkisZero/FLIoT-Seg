@@ -10,7 +10,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 def setup_gpu(
     gpu_id: int = 0,
     enable_mixed_precision: bool = True,
-    memory_limit_mb: int = 8000,   # ★ 프로세스당 VRAM 상한 (MB 단위, 기본 12GB)
+    memory_limit_mb: int = 2000,   # ★ 프로세스당 VRAM 상한 (MB 단위, 기본 12GB)
 ):
     """
     GPU 설정 및 메모리 최적화
