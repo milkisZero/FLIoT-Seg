@@ -1,4 +1,4 @@
-# FLIoT 2nd Gen - Federated Learning for Semantic Segmentation
+# FLIoT-Seg - Federated Learning for IoT-based Semantic Segmentation
 
 연합학습(Federated Learning)을 활용한 자율주행 환경의 시맨틱 세그멘테이션(Semantic Segmentation) 시스템입니다. SYNTHIA 데이터셋을 사용하여 분산된 클라이언트들 간의 협업 학습을 수행하며, oneM2M 표준 기반의 IoT 플랫폼(Mobius)을 통해 통신합니다.
 
